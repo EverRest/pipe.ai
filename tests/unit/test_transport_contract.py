@@ -1,6 +1,4 @@
-"""Contract tests for Transport. Slack runs when transport_slack exists (T025)."""
-
-import importlib.util
+"""Contract tests for Transport. Slack runs on a stub WebClient."""
 
 import pytest
 
@@ -13,9 +11,9 @@ def _fake():
 
 
 def _slack():
-    if importlib.util.find_spec("pipe.transport_slack") is None:
-        pytest.skip("pipe.transport_slack not written yet (T025)")
-    pytest.skip("Slack stub WebClient fixture comes with T025")
+    from unit.test_transport_slack import make_slack
+
+    return make_slack()
 
 
 @pytest.fixture(params=[_fake, _slack], ids=["fake", "slack"])

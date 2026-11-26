@@ -1,0 +1,128 @@
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from pipe.config import Config
+from pipe.core.contract import RuntimeFailed, RuntimeInput
+from pipe.runtime_claude import ClaudeRuntime, build_cmd, build_prompt
+from pipe.runtime_claude_tools import tools_for
+
+CFG = Config(agent_name="a", slack_tokens="keychain:x", repo_roots=["/r1", "/r2"])
+INP = dict(thread=[{"user": "bob", "text": "hi"}], task={"id": "t1", "purpose": "chat"})
+OK = json.dumps({"result": json.dumps({"text": "hello", "status": "done"})})
+
+
+class Fake:
+    def __init__(self, out=OK, code=0, exc=None):
+        self.out, self.code, self.exc, self.calls = out, code, exc, []
+
+    def __call__(self, argv, stdin, env, cwd, timeout):
+        self.calls.append(dict(argv=argv, stdin=stdin, env=env, cwd=cwd, timeout=timeout))
+        if self.exc:
+            raise self.exc
+        return self.code, self.out
+
+
+def rt(fake, cfg=CFG, **kw):
+    return ClaudeRuntime(cfg, runner=fake, scrub=lambda s: s.replace("SECRET", "[redacted]"), **kw)
+
+
+def val(argv, flag):
+    return argv[argv.index(flag) + 1]
+
+
+def test_non_owner_cmd():
+    cmd = build_cmd(CFG, tools_for(False, CFG.owner_tools, []))
+    assert cmd[:2] == ["claude", "-p"]
+    assert val(cmd, "--tools") == ""
+    assert "--restricted" in cmd and val(cmd, "--permission-mode") == "dontAsk"
+    for f in ("--allowedTools", "--add-dir", "--disallowedTools", "--model", "--max-budget-usd"):
+        assert f not in cmd
+
+
+def test_owner_cmd():
+    cfg = Config(
+        **{**CFG.__dict__, "model": "opus", "max_budget_usd": 1.5, "deny_rules": ["Bash(rm:*)"]}
+    )
+    cmd = build_cmd(cfg, tools_for(True, cfg.owner_tools, cfg.deny_rules))
+    assert val(cmd, "--tools") == "Read,Grep,Glob"
+    i = cmd.index("--allowedTools")
+    assert cmd[i + 1 : i + 7] == [
+        "Read(//r1/**)", "Grep(//r1/**)", "Glob(//r1/**)",
+        "Read(//r2/**)", "Grep(//r2/**)", "Glob(//r2/**)",
+    ]  # fmt: skip
+    assert cmd.count("--add-dir") == 1 and val(cmd, "--add-dir") == "/r2"
+    j = cmd.index("--disallowedTools")
+    assert cmd[j + 1 : j + 3] == ["Bash(git push:*)", "Bash(rm:*)"]
+    assert val(cmd, "--model") == "opus" and val(cmd, "--max-budget-usd") == "1.5"
+    assert "--restricted" in cmd and "--strict-mcp-config" in cmd
+
+
+def test_widened_tool_is_bare_allow():
+    cfg = Config(**{**CFG.__dict__, "owner_tools": ["Read", "WebFetch"]})
+    cmd = build_cmd(cfg, tools_for(True, cfg.owner_tools, []))
+    assert "WebFetch" in cmd[cmd.index("--allowedTools") + 1 :]
+    assert "Read(//r1/**)" in cmd and "WebFetch(//r1/**)" not in cmd
+
+
+def test_tilde_expanded():
+    cfg = Config(**{**CFG.__dict__, "repo_roots": ["~/code"]})
+    cmd = build_cmd(cfg, tools_for(True, cfg.owner_tools, []))
+    assert f"Read(/{Path('~/code').expanduser()}/**)" in cmd
+
+
+def test_run_ok_and_env(monkeypatch):
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-1")
+    monkeypatch.setenv("HOME", "/home/x")
+    f = Fake()
+    out = rt(f).run(RuntimeInput(requester_is_owner=False, **INP))
+    assert out.text == "hello" and out.status == "done"
+    c = f.calls[0]
+    assert c["env"]["PIPE_RUNTIME"] == "1" and "SLACK_BOT_TOKEN" not in c["env"]
+    assert c["cwd"] == "/r1" and c["timeout"] == 30 * 60
+    assert "--tools" in c["argv"] and "hi" in c["stdin"]
+
+
+def test_structured_output_envelope():
+    env = json.dumps({"structured_output": {"text": "x", "status": "done"}})
+    assert rt(Fake(out=env)).run(RuntimeInput(requester_is_owner=True, **INP)).text == "x"
+
+
+def test_output_scrubbed_and_escaped():
+    body = json.dumps(
+        {"text": "SECRET <!here>", "status": "failed", "reason": "SECRET", "artifacts": ["SECRET"]}
+    )
+    f = Fake(out=json.dumps({"result": body}))
+    out = ClaudeRuntime(
+        CFG,
+        runner=f,
+        scrub=lambda s: s.replace("SECRET", "[redacted]"),
+        escape_mentions=lambda s: s.replace("<!here>", "here"),
+    ).run(RuntimeInput(requester_is_owner=True, **INP))
+    assert (
+        out.text == "[redacted] here"
+        and out.reason == "[redacted]"
+        and out.artifacts == ["[redacted]"]
+    )
+
+
+@pytest.mark.parametrize(
+    "fake,reason",
+    [
+        (Fake(exc=subprocess.TimeoutExpired("claude", 1)), "timeout"),
+        (Fake(exc=FileNotFoundError()), "command not found"),
+        (Fake(code=2), "exit 2"),
+        (Fake(out="not json"), "invalid"),
+        (Fake(out=json.dumps({"result": "nope"})), "not valid JSON"),
+    ],
+)
+def test_failures(fake, reason):
+    with pytest.raises(RuntimeFailed, match=reason):
+        rt(fake).run(RuntimeInput(requester_is_owner=True, **INP))
+
+
+def test_prompt_untrusted_no_trust_data():
+    p = build_prompt(INP["thread"], {"id": "t1", "purpose": "chat", "hop": 3})
+    assert "untrusted" in p.lower() and "bob" in p and "hop" not in p.lower()

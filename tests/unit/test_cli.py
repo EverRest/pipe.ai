@@ -52,8 +52,34 @@ def test_flows_without_handler(capsys, tmp_path, monkeypatch):
     assert list(cwd.iterdir()) == []
 
 
-@pytest.mark.parametrize("cmd", ["run", "doctor", "schedule", "status-hook"])
-def test_stubs_do_not_crash(cmd, capsys):
-    argv = [cmd] + (["Stop"] if cmd == "status-hook" else [])
-    assert main(argv) == 1
-    assert "not implemented" in capsys.readouterr().err
+def test_run_calls_handler():
+    assert main(["run"], run_handler=lambda: 5) == 5
+
+
+def test_status_hook_always_0(monkeypatch):
+    from pipe import hook
+
+    monkeypatch.setattr(hook, "main", lambda e: 1 / 0)
+    assert main(["status-hook", "Stop"]) == 0
+
+
+def test_doctor_exit_codes(monkeypatch, capsys):
+    from pipe import doctor
+
+    monkeypatch.setattr(doctor, "check", lambda: [])
+    assert main(["doctor"]) == 0
+    monkeypatch.setattr(doctor, "check", lambda: ["owner: empty"])
+    assert main(["doctor"]) == 1
+    assert "FAIL owner: empty" in capsys.readouterr().out
+
+
+def test_schedule(monkeypatch):
+    from pipe import launchd
+
+    seen = []
+    monkeypatch.setattr(launchd, "install", lambda run: seen.append("i") or 0)
+    monkeypatch.setattr(launchd, "remove", lambda run: seen.append("r") or 0)
+    assert main(["schedule", "--install"]) == 0
+    assert main(["schedule", "--remove"]) == 0
+    assert seen == ["i", "r"]
+    assert main(["schedule"]) == 1

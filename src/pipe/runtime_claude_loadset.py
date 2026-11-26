@@ -46,7 +46,11 @@ def load_set(
         ):
             skip(i, "not exposed")
         elif c.type == "mcp":
-            mcp.append(c.name)
+            if sum(x.type == "mcp" and x.name == c.name for x in caps) > 1:
+                text = f"{i} not loaded: the same server name is defined in more than one scope."
+                skipped.append(Notice("ambiguous_mcp", i, text))
+            else:
+                mcp.append(c.name)
         else:
             link = Path(c.source).stem if c.type == "command" else Path(c.source).name
             if link in links:

@@ -55,3 +55,13 @@ def test_link_name_collision():
     b = c("skill", "x", "/b/same", plugin="p2", **OPEN)
     s = load_set([a, b], [], [a.id, b.id])
     assert s.skills == (("same", "/a/same"),) and [n.id for n in s.skipped] == [b.id]
+
+
+def test_ambiguous_mcp_refused():
+    u, p = c("mcp", "dup", "/h/.claude.json"), c("mcp", "dup", "/p#dup", plugin="p")
+    one = c("mcp", "solo")
+    s = load_set([u, p, one], ["mcp:dup", "mcp:p:dup", "mcp:solo"], [u.id, p.id, one.id])
+    assert s.mcp == ("solo",)
+    amb = [n for n in s.skipped if n.kind == "ambiguous_mcp"]
+    assert {n.id for n in amb} == {u.id, p.id}
+    assert all("more than one scope" in n.text and "/p" not in n.text for n in amb)

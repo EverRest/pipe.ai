@@ -141,6 +141,8 @@ class ClaudeRuntime:
         pol = tools_for(inp.requester_is_owner, cfg.owner_tools, cfg.deny_rules)
         cwd = _roots(cfg)[0]
         run_dir = pipe_home() / "run" / uuid.uuid4().hex
+        # Only a run with capability IDs creates a load directory (it may hold MCP config).
+        loads = bool(inp.request and inp.request.capability_ids)
         try:
             prepared = self._load(inp, run_dir)
             code, out = self.runner(
@@ -155,7 +157,8 @@ class ClaudeRuntime:
         except FileNotFoundError as e:
             raise RuntimeFailed("command not found") from e
         finally:
-            cleanup(run_dir)
+            if loads:
+                cleanup(run_dir)
         if code != 0:
             raise RuntimeFailed(f"exit {code}")
         o = parse_output(_payload(out))

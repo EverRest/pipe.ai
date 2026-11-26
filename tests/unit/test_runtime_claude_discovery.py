@@ -98,3 +98,13 @@ def test_read_mcp_entries(tmp_path):
     e = read_mcp_entries(home)
     assert e["gl"]["url"] == FAKE_URL and e["pm"]["url"] == FAKE_URL
     assert read_mcp_entries(tmp_path / "none") == {}
+
+
+def test_same_mcp_name_in_two_scopes_is_kept(tmp_path):
+    home, repos = run(tmp_path)
+    j = home / ".claude.json"
+    d = json.loads(j.read_text())
+    d["mcpServers"]["pm"] = {"url": FAKE_URL}  # same name as the plugin server
+    j.write_text(json.dumps(d))
+    caps = [c for c in discover(home, [str(repos)])[0] if c.type == "mcp" and c.name == "pm"]
+    assert {c.plugin for c in caps} == {None, "pa"} and len({c.source for c in caps}) == 2

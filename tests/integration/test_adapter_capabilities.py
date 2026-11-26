@@ -145,3 +145,29 @@ def test_run_not_exposed_or_no_ids_is_stage_001(tmp_path, monkeypatch):
     rt.run(inp(ids=[]))
     rt.run(inp())
     assert all("--plugin-dir" not in c and "--mcp-config" not in c for c in fake.cmds)
+
+
+# --- SC-007: no users.info or bots.info ------------------------------------------------
+
+
+class Spy:
+    """Wrap a transport and record every method name that is looked up."""
+
+    def __init__(self, inner):
+        self._inner, self.names = inner, set()
+
+    def __getattr__(self, name):
+        self.names.add(name)
+        return getattr(self._inner, name)
+
+
+def test_publish_makes_no_user_or_bot_lookup(tmp_path, monkeypatch):
+    build_claude_tree(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    spy = Spy(FakeTransport(channels={"pipe-status": "C_S", "pipe-agents": AG}))
+    cfg = Config("agent", "keychain:x", owner="U_OWNER", repo_roots=[str(tmp_path / "repos")])
+    a = adapter.build(cfg, spy, SimpleNamespace(run=None), scrub, spy.escape_mentions)
+    a.publish_capabilities(spy.whoami())
+    assert spy.names  # the spy saw calls
+    assert not {n for n in spy.names if "users_info" in n or "bots_info" in n}
+    assert not {n for n in spy.names if "users.info" in n or "bots.info" in n}

@@ -39,3 +39,12 @@ def test_decide():
     assert decide_dm("h", None) == "send"
     assert decide_dm("h", "h") == "none"
     assert decide_dm("h", "g") == "send"
+
+
+def test_url_and_path_removed():
+    n = [
+        Notice("skipped", "a", "a at https://evil.example/x was skipped."),
+        Notice("skipped", "b", "b at /Users/me/secret was skipped."),
+    ]
+    t = build_summary([], [], n).text
+    assert "https" not in t and "/Users" not in t and t.count("[removed]") == 2

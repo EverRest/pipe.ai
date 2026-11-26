@@ -122,6 +122,11 @@ def _strings(v):
             yield from _strings(x)
 
 
+def unsafe(s: str) -> bool:
+    """True if `s` has a URL, a path, or a token."""
+    return bool(_URL.search(s) or _PATH.search(s) or scrub(s) != s)
+
+
 def validate_card(card) -> list[str]:
     """Violations; [] means safe. Accepts a Card or its dict form."""
     d = card if isinstance(card, dict) else asdict(card)

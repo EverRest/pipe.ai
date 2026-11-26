@@ -31,7 +31,7 @@ Single project: `src/pipe/`, `tests/unit/`, `tests/integration/`, `tests/fakes.p
 
 **Purpose**: Prepare the files. Check the 001 baseline.
 
-- [ ] T001 Create the empty new files from the plan: `src/pipe/core/capability.py`, `src/pipe/core/exposure.py`, `src/pipe/core/card.py`, `src/pipe/core/summary.py`, `src/pipe/core/schema.py`, `src/pipe/declared.py`, `src/pipe/runtime_claude_capability.py`, `src/pipe/runtime_claude_exposure.py`, `src/pipe/runtime_claude_loadset.py`, `src/pipe/runtime_claude_discovery.py`, `src/pipe/card_sync.py`, `src/pipe/owner_summary.py`, `src/pipe/runtime_claude_load.py`, `tests/manual/` (directory only)
+- [ ] T001 Create the empty new files from the plan: `src/pipe/core/capability.py`, `src/pipe/core/exposure.py`, `src/pipe/core/card.py`, `src/pipe/core/summary.py`, `src/pipe/core/schema.py`, `src/pipe/capset.py` (the `collect` helper that the CLI and the adapter use), `src/pipe/declared.py`, `src/pipe/runtime_claude_capability.py`, `src/pipe/runtime_claude_exposure.py`, `src/pipe/runtime_claude_loadset.py`, `src/pipe/runtime_claude_discovery.py`, `src/pipe/card_sync.py`, `src/pipe/owner_summary.py`, `src/pipe/runtime_claude_load.py`, `tests/manual/` (directory only)
 - [ ] T002 Run `pytest tests/unit tests/integration` for spec 001. All tests must pass before 002 work starts. Do not add a dependency (research.md D14)
 
 ---
@@ -174,7 +174,7 @@ Single project: `src/pipe/`, `tests/unit/`, `tests/integration/`, `tests/fakes.p
   - `--restricted` and `--permission-mode dontAsk` are in every command.
   - An empty load set adds no flag.
   - With the stub script `tests/stub_claude/claude`, the recorded argv has the new flags.
-  - The adapter passes no `PreparedLoad` in 002 and does not call `prepare` (check in `tests/integration/test_adapter_mention.py`: the argv has no `--plugin-dir` and no `--mcp-config`, and no `pipe-exposed` run dir is created) (Q2).
+  - The mention path passes no capability IDs, so `ClaudeRuntime` calls no `prepare` (check in `tests/integration/test_adapter_mention.py`: the argv has no `--plugin-dir` and no `--mcp-config`, and no `pipe-exposed` run dir is created). The load wiring is in 002 inside `ClaudeRuntime` (`run`, `_load`: `load_set`, `prepare`, `cleanup`). It runs only when the run has capability IDs (`inp.request.capability_ids`). The mention path never sets them until spec 003, so mention runs stay as in stage 001.
 
 - [ ] T041 [P] [US2] Write failing test for `build_summary` and `decide_dm` in `tests/unit/test_summary.py` (FR-019, FR-020, research.md D15). The input `caps` are hand-made core `Capability` values:
   - The text has one count line (exposed, `owner-only`, skipped) and one line per notice. All notices are in it.
@@ -195,7 +195,7 @@ Single project: `src/pipe/`, `tests/unit/`, `tests/integration/`, `tests/fakes.p
 - [ ] T021 [US2] Implement `exposure_notices` in `src/pipe/core/exposure.py` (T017; depends on T008, same file; takes the core `Capability` values and the `tag_map`)
 - [ ] T022 [P] [US2] Implement `LoadSet` and `load_set(caps, exposed, capability_ids)` in `src/pipe/runtime_claude_loadset.py` (T018; depends on T008 and T051). The module belongs to the `claude` runtime adapter. It imports nothing from the pipeline core except the 002 core types and `state_of`
 - [ ] T023 [US2] Implement `prepare`, `PreparedLoad`, and `cleanup` in `src/pipe/runtime_claude_load.py` (T019; depends on T013, T022). Use `os.symlink`, `shutil.copyfile`, `os.chmod`, and `shutil.rmtree`
-- [ ] T024 [US2] Add the `prepared` parameter to `build_cmd` in `src/pipe/runtime_claude.py` (T020; depends on T023). The default is `None`. Do not call `prepare` or `cleanup` from any 002 run path: specs 003 and 004 do that
+- [ ] T024 [US2] Add the `prepared` parameter to `build_cmd` in `src/pipe/runtime_claude.py` (T020; depends on T023). The default is `None`. The load wiring is in 002 inside `ClaudeRuntime` (`run`, `_load`: `load_set`, `prepare`, `cleanup`). It runs only when the run has capability IDs (`inp.request.capability_ids`). The mention path never sets them until spec 003, so mention runs stay as in stage 001. Spec 003 sets the IDs
 - [ ] T025 [US2] Print the notices in `pipe capabilities` (`src/pipe/cli.py`) and in the adapter log at start (`src/pipe/adapter.py`) (T012, T017; depends on T015, T016, T021). The notices are the `skipped` notices of `discover` and the result of `exposure_notices` on the `to_core` values, with `exposed` and `tags` from the config
 - [ ] T043 [US2] Implement `Summary`, `build_summary`, and `decide_dm` in `src/pipe/core/summary.py` (T041; depends on T021; uses 001 `scrub` and `escape_mentions`)
 
@@ -349,9 +349,9 @@ Single project: `src/pipe/`, `tests/unit/`, `tests/integration/`, `tests/fakes.p
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T038 Write the manual helper `tests/manual/load_probe.py` (about 20 lines): it builds a `PreparedLoad` for the current `exposed` set, runs the real `claude` with `build_cmd`, and prints the answer to a prompt that asks for one exposed skill. Then run quickstart section 3. Check: the exposed skill runs, a not-exposed skill is denied, only exposed MCP tools exist, a call of an exposed MCP tool is allowed by `mcp__<server>` (research.md A4), a command of the generated plugin runs (A5), and `~/.pipe/run` is empty afterwards
-- [ ] T039 Run quickstart section 2 on the real Slack workspace: scopes `pins:write`, `pins:read`, and `im:write` (check that `chat:write` is present), one summary DM and no DM on restart (research.md A7), one pinned card, update in place, deleted and unpinned card, 30 exposed skills for the metadata size (research.md A1, A2), the SC-005 time (list review and one exposure under 5 minutes), and the start-up time added by discovery and card sync (plan.md goal: under 5 seconds on 20 plugins)
-- [ ] T040 Run `pytest tests/unit tests/integration`, then the SC-003 scan on the live card (`http`, `xox`, `/Users`, `~/`). Confirm that `pipe doctor` (001) still passes five checks and that the 001 tests still pass
+- [ ] T038 MANUAL — not run by make ci. Write the manual helper `tests/manual/load_probe.py` (about 20 lines): it builds a `PreparedLoad` for the current `exposed` set, runs the real `claude` with `build_cmd`, and prints the answer to a prompt that asks for one exposed skill. Then run quickstart section 3. Check: the exposed skill runs, a not-exposed skill is denied, only exposed MCP tools exist, a call of an exposed MCP tool is allowed by `mcp__<server>` (research.md A4), a command of the generated plugin runs (A5), and `~/.pipe/run` is empty afterwards
+- [ ] T039 MANUAL — not run by make ci. Run quickstart section 2 on the real Slack workspace: scopes `pins:write`, `pins:read`, and `im:write` (check that `chat:write` is present), one summary DM and no DM on restart (research.md A7), one pinned card, update in place, deleted and unpinned card, 30 exposed skills for the metadata size (research.md A1, A2), the SC-005 time (list review and one exposure under 5 minutes), and the start-up time added by discovery and card sync (plan.md goal: under 5 seconds on 20 plugins)
+- [ ] T040 MANUAL — not run by make ci. Run `pytest tests/unit tests/integration`, then the SC-003 scan on the live card (`http`, `xox`, `/Users`, `~/`). Confirm that `pipe doctor` (001) still passes five checks and that the 001 tests still pass
 
 ---
 
@@ -417,7 +417,7 @@ Task: "Implement sanitize_text and skills_hash in src/pipe/core/card.py"
 
 - FR-001: T011, T013. FR-002: T012, T014, T015, T016. FR-003, FR-004: T050, T051. FR-005: T007, T008, T018, T022, T027. FR-006: T005, T006 (only the local config changes `exposed`). FR-007, FR-008: T027, T032. FR-009: T026, T027, T030, T031, T032. FR-010: T026, T031. FR-011, FR-012: T028, T030, T033, T036. FR-013: T030, T036, T037. FR-014: T017, T021, T025, T030. FR-015: T007, T008, T050, T051, T027, T030. FR-016: T007, T008, T017, T018, T021, T022, T027, T030. FR-017: T007, T008, T017, T027, T030. FR-018: T007, T008, T017, T021, T027. FR-019: T041, T042, T043, T044, T045. FR-020: T029, T034, T041, T042, T043, T044. FR-021: T046, T047, T030. FR-022: T003, T011, T027, T030. FR-023: T003, T005, T006, T011, T027, T030, T048, T052, T053. FR-026: T056, T057, T058, T059, T062, T063. FR-027: T058, T059, T062. FR-028: T056, T057. FR-029: T060, T061, T062. FR-030: T054, T055, T056, T057. FR-024: T018, T022, T020, T024. FR-025: T048, T049, T050, T051, T004, T008, and the import-boundary test T071 of spec 003.
 - SC-001: T030, T039. SC-002: T027, T030. SC-003: T026, T027, T030, T040. SC-004: T030, T039. SC-005: T039. SC-006: T042, T044, T045, T039. SC-007: T046, T047. SC-008: T003, T011, T027. SC-009: T030, T052. SC-010: T071 of spec 003. SC-011: T058, T062. SC-014: T064, T065. SC-015: T066. FR-031: T064, T065. FR-032: T066. SC-012: T060, T062. SC-013: T056.
-- Design brief §12 (load into `--restricted` child): T018 to T020, T022 to T024, T038. These tasks build and test the load-set builder only. No task wires it into a run (Q2). T020 guards this with a regression test.
+- Design brief §12 (load into `--restricted` child): T018 to T020, T022 to T024, T038. These tasks build and test the load-set builder only. The wiring is in `ClaudeRuntime` and runs only when the run has capability IDs; the mention path sets none until spec 003. T020 guards this with a regression test.
 
 ---
 

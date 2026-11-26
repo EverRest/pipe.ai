@@ -123,9 +123,17 @@ def test_owner_tools_off_when_thread_has_other_person():
     assert r.inputs[0].requester_is_owner is False
 
 
-def test_owner_tools_on_when_thread_is_owner_and_bot_only():
+def test_owner_tools_off_when_thread_has_other_bot():
     a, t, r = make()
     p = t.add_message(CH, "note", sender_id="B_OTHER", sender_is_bot=True)
     m = t.add_message(CH, "<@B1> hi", sender_id="U_OWNER", thread=p.ts)
     t.raise_event(MentionEvent(CH, m.ts, m.thread, "U_OWNER", False, m.text, "E9"))
-    assert r.inputs[0].requester_is_owner is True
+    assert r.inputs[0].requester_is_owner is False
+
+
+def test_owner_tools_on_when_thread_is_owner_and_own_bot_only():
+    a, t, r = make()
+    p = t.add_message(CH, "note", sender_id=a.agent_id, sender_is_bot=True)
+    m = t.add_message(CH, "<@B1> hi", sender_id="U_OWNER", thread=p.ts)
+    t.raise_event(MentionEvent(CH, m.ts, m.thread, "U_OWNER", False, m.text, "E9"))
+    assert a.agent_id and r.inputs[0].requester_is_owner is True

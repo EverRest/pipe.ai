@@ -45,7 +45,7 @@ def _plugin_mcp(path: Path) -> dict:
 
 
 def read_mcp_entries(home: Path) -> dict[str, dict]:
-    """Full entries (may hold secrets). Run time only (research.md D7). User scope wins."""
+    """Full entries (may hold secrets). Run time only (research.md D7)."""
     out: dict[str, dict] = {}
     for _, path in _enabled_plugins(home):
         out |= _plugin_mcp(path)

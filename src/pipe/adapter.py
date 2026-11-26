@@ -77,9 +77,9 @@ class Adapter:
     def _reply(self, e: MentionEvent) -> str:
         msgs = self.t.replies(e.channel, e.thread_ts)
         thread = [{"user": m.sender_handle or m.sender_id, "text": m.text} for m in msgs]
-        # Tools only if the trigger and the whole thread are owner or bot (D1).
+        # Tools only if the trigger and the whole thread are owner or this agent's own bot.
         owner_only = is_owner(e.sender_id, self.cfg.owner) and all(
-            m.sender_is_bot or is_owner(m.sender_id, self.cfg.owner) for m in msgs
+            m.sender_id == self.agent_id or is_owner(m.sender_id, self.cfg.owner) for m in msgs
         )
         inp = RuntimeInput(
             thread,

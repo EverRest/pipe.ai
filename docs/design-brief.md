@@ -298,7 +298,7 @@ Each milestone gives value alone. Run `/speckit.specify` with the "Specify input
 
 ### M1 — Discovery and exposure
 
-**Specify input.** When the adapter starts, it finds what the agent can do: plugins, skills, MCP servers, slash commands, and repos. It shows the owner the list. Capabilities that use the owner's credentials are hidden by default. The owner chooses what to expose. The agent publishes its exposed capabilities as a pinned card in `#pipe-agents`. When the capabilities change, the card is updated.
+**Specify input.** When the adapter starts, it finds what the agent can do: plugins, skills, MCP servers, slash commands, and repos. It shows the owner the list. Capabilities that use the owner's credentials are owner-only by default. The owner chooses what to expose. The agent publishes its exposed capabilities as a pinned card in `#pipe-agents`. When the capabilities change, the card is updated.
 
 **Plan notes.** Read the Claude Code plugin, skill, and MCP configuration. Card format is A2A AgentCard (§5.3). The card has `bot_user_id` from `auth.test` and stable `skills[].id` values (the `capability_id`). Tags come from the frontmatter and from the owner `tags` map (the map wins). Hash of the skills list. `chat.update` on hash change. Classification rule for `owner-only`: any MCP server and any skill that calls an external system with user credentials. The runtime adapter (`claude`) applies this rule. The core only consumes the result (`exposed`, `owner-only`, or skipped).
 
@@ -316,7 +316,7 @@ Each milestone gives value alone. Run `/speckit.specify` with the "Specify input
 
 **Acceptance.**
 
-- A plan with an unknown agent or a hidden capability is rejected before ✅.
+- A plan with an unknown agent or an owner-only capability is rejected before ✅.
 - ✅ from a person who is not the thread starter does not start the pipeline.
 - Metadata from a bot without a card is ignored.
 - `hop` 4 is refused for a free plan (a verified template has limit 5, M5).

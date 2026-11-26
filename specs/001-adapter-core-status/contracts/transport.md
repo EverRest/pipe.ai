@@ -36,7 +36,7 @@ The port holds only the operations that specs 001 to 006 use.
 | `post_message(channel, text, thread=None, metadata=None, buttons=None) -> ts` | Reply, card, plan, step, buttons | `chat.postMessage` (buttons become Block Kit) |
 | `update_message(channel, ts, text, metadata=None, buttons=None)` | Status, card, step state | `chat.update` |
 | `delete_message(channel, ts)` | Remove a lost claim | `chat.delete` |
-| `history(channel, oldest=None, limit=None) -> list[Message]` | Read a channel with metadata (cards, status, catch-up, metrics) | `conversations.history` with cursor and `include_all_metadata` |
+| `history(channel, oldest=None, limit=None) -> list[Message]` | Read a channel with metadata (cards, status, catch-up, metrics) | `conversations.history` with cursor and `include_all_metadata`. Order: oldest first. `limit` keeps the newest N. The Slack adapter reverses the newest-first Slack order. |
 | `replies(channel, thread, oldest=None) -> list[Message]` | Read a thread with metadata and reactions | `conversations.replies` with cursor |
 | `pin(channel, ts)`, `list_pins(channel) -> list[ts]` | Pin the card | `pins.add`, `pins.list` |
 | `send_dm(user_id, text)` | DM to the owner | `conversations.open`, `chat.postMessage` |
@@ -44,7 +44,7 @@ The port holds only the operations that specs 001 to 006 use.
 | `on_event(handler)` | Receive `MentionEvent`, `ReactionEvent`, `ClickEvent` | Socket Mode: `app_mention`, `reaction_added`, `block_actions` |
 | `on_reconnect(callback)` | Run catch-up after a link loss | Socket Mode reconnect listener |
 | `mention(handle) -> str` | Text that mentions an agent | `<@handle>` |
-| `escape_mentions(text) -> str` | Remove all mention and broadcast syntax | `<!channel>`, `<!here>`, `<@U..>` and so on |
+| `escape_mentions(text) -> str` | Escape `&`, `<`, `>` in untrusted text. This stops mentions, broadcasts and disguised links such as `<https://evil\|https://good>`. Call it on untrusted text before adding `mention()` text | `&amp;`, `&lt;`, `&gt;` |
 | `id_pattern: str` | Valid form of a `sender_id` (used to check the `allowlist` config key) | `^[BUW][A-Z0-9]{2,}$` |
 
 `mention` and `escape_mentions` are pure. Core code that builds text gets them as an injected `Formatter`. The core never writes mention syntax itself.
@@ -66,7 +66,7 @@ The port holds only the operations that specs 001 to 006 use.
 | `sender_is_bot` | `bot_id` is set |
 | `sender_handle` | `user` (for a bot message, the bot user ID) |
 | `card_owner_id` | the card field `owner` (a Slack user ID in the Slack adapter) |
-| `event_id` | the Socket Mode envelope `event_id` (the dedupe source) |
+| `event_id` | the Socket Mode envelope `event_id` (the dedupe source). A button click has no envelope `event_id`; the adapter sets `event_id` to the click `trigger_id` for logging only. Click repeats are handled by the state check of spec 003 FR-018, not by this ID |
 | `Identity.agent_id`, `Identity.handle` | `auth.test` `bot_id`, `user_id` |
 
 The card wire fields keep their names `bot_id` and `bot_user_id` (design brief §5.3). The core reads them as the opaque `agent_id` and `handle`. The trust check "message `sender_handle` equals card `bot_user_id`" is a core rule (spec 003 task T007). It uses the neutral fields.

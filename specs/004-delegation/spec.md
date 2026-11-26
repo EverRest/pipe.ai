@@ -15,6 +15,7 @@
 - A step is `{agent, capability, access, goal}`. `agent` may be `any` with `capability: tag:<tag>` (spec 003 late binding). `access` is `read`, `write`, or `approve`. A step can have an optional `payload`. A `write` step can also have an optional `target` (an opaque name of a repo, FR-019).
 - A delegation is a step with `access: write` that goes to an agent of another owner. It is not a step type. The core has no field `kind` and no field `skill` for a step.
 - The task message is `pipe.task.v1`. It has `phase` (`plan` or `step`), `access`, and `next: {agent, access, payload}`.
+- Clicks on `pipe_accept` and `pipe_reject` are idempotent. A click acts only while the gate of that step waits for an answer (spec 003 FR-018). A second click, or a click after a restart, changes nothing.
 - Message types (spec 003 `contracts/task-metadata.md`). The owner gate of this spec uses type 4 (the claim message) with `status: needs_approval`. The buttons are `pipe_accept` and `pipe_reject`. Type 5 `needs_approval` is a different thing: it is the `gate: approval` step field or a plan proposal of spec 003. A type 5 gate has a ✅ release and no button. This spec says "owner gate" for type 4 and never changes type 5, type 10, or type 11.
 - The core stays capability-agnostic (constitution principle XI). The core sees a `write` run request and an MR link in `artifacts`. Only the `claude` runtime adapter knows the worktree, git, the directory flags, the deny rules, and the creation of the MR. The MR provider is replaceable. GitLab is the first provider.
 

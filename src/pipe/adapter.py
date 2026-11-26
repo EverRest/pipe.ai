@@ -7,12 +7,19 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 from pipe import state
+from pipe.capset import collect
+from pipe.card_sync import sync_card
 from pipe.config import Config
+from pipe.core.card import Identity as CardIdentity
+from pipe.core.card import build_card
 from pipe.core.catchup import parents_to_scan, pick_missed
 from pipe.core.contract import MentionEvent, Message, RuntimeFailed, RuntimeInput
 from pipe.core.dedupe import remember
+from pipe.core.exposure import render_list
 from pipe.core.router import is_owner, should_handle
 from pipe.core.status import parse_status_messages, recent, render_summary
+from pipe.core.summary import build_summary
+from pipe.owner_summary import send_summary
 
 WEEK = 7 * 86400
 log = logging.getLogger("pipe.adapter")
@@ -68,14 +75,16 @@ class Adapter:
             self.in_flight -= {key, e.event_id}
 
     def _reply(self, e: MentionEvent) -> str:
-        thread = [
-            {"user": m.sender_handle or m.sender_id, "text": m.text}
-            for m in self.t.replies(e.channel, e.thread_ts)
-        ]
+        msgs = self.t.replies(e.channel, e.thread_ts)
+        thread = [{"user": m.sender_handle or m.sender_id, "text": m.text} for m in msgs]
+        # Tools only if the trigger and the whole thread are owner or bot (D1).
+        owner_only = is_owner(e.sender_id, self.cfg.owner) and all(
+            m.sender_is_bot or is_owner(m.sender_id, self.cfg.owner) for m in msgs
+        )
         inp = RuntimeInput(
             thread,
             {"id": uuid.uuid4().hex, "purpose": "chat"},
-            is_owner(e.sender_id, self.cfg.owner),
+            owner_only,
         )
         try:
             out = self.rt.run(inp)
@@ -117,8 +126,37 @@ class Adapter:
             if d := self._accept(e):
                 self._process(e, d.action)
 
+    def publish_capabilities(self, me) -> None:
+        """Log the list, sync the card, DM the summary. An error is logged, never raised."""
+        try:
+            caps, notes = collect(self.cfg)
+            for ln in render_list(caps, self.cfg.exposed, notes):
+                log.info(ln)
+        except Exception:
+            log.exception("discovery failed")
+            return
+        try:
+            ch = self.t.find_channel(self.cfg.agents_channel)
+            state.save_state(bot_id=me.agent_id, agents_channel_id=ch)
+            who = CardIdentity(
+                self.cfg.agent_name, self.cfg.description, self.cfg.owner, me.agent_id, me.handle
+            )
+            card = build_card(who, caps, self.cfg.exposed, self.cfg.tags)
+            if upd := sync_card(self.t, state.load_state(), card, notes):
+                state.save_state(**upd)
+        except Exception:
+            log.exception("card step failed")
+        try:
+            summary = build_summary(caps, self.cfg.exposed, notes)
+            if upd := send_summary(self.t, state.load_state(), self.cfg.owner, summary):
+                state.save_state(**upd)
+        except Exception:
+            log.exception("summary step failed")
+
     def start(self) -> None:
-        self.agent_id = self.t.whoami().agent_id
+        me = self.t.whoami()
+        self.agent_id = me.agent_id
+        self.publish_capabilities(me)
         state.init_last_seen(f"{time.time():.6f}")
         self.t.on_event(self.on_event)
         self.t.on_reconnect(lambda: self.submit(self.catch_up))

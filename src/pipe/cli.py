@@ -10,6 +10,7 @@ def _parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("run")
     sub.add_parser("doctor")
+    sub.add_parser("capabilities")
     s = sub.add_parser("schedule")
     s.add_argument("--install", action="store_true")
     s.add_argument("--remove", action="store_true")
@@ -66,6 +67,15 @@ def main(argv=None, flows_handler=None, run_handler=_run_adapter) -> int:
         return 0
     if a.cmd == "run":
         return run_handler()
+    if a.cmd == "capabilities":
+        from pipe.capset import collect
+        from pipe.config import load_config
+        from pipe.core.exposure import render_list
+
+        cfg = load_config()
+        caps, notes = collect(cfg)
+        print("\n".join(render_list(caps, cfg.exposed, notes)))
+        return 0
     if a.cmd == "doctor":
         from pipe import doctor
 

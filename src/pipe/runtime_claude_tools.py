@@ -2,7 +2,20 @@
 
 from dataclasses import dataclass
 
+# A deny list is best effort, not a security guarantee. The real guard for push
+# belongs to spec 004 (worktree, GIT_CONFIG_*).
 PUSH_DENY = "Bash(git push:*)"
+DEFAULT_DENY = [
+    PUSH_DENY,
+    *(f"Bash({c}:*)" for c in ("git -C", "git -c", "env", "sh", "bash", "zsh")),
+]
+
+
+def is_broad_bash(rule: str) -> bool:
+    """`Bash`, `Bash()`, `Bash(*)`, `Bash(:*)` allow every command."""
+    return rule == "Bash" or (
+        rule.startswith("Bash(") and rule.endswith(")") and rule[5:-1].strip() in ("", "*", ":*")
+    )
 
 
 @dataclass(frozen=True)
@@ -14,8 +27,8 @@ class ToolPolicy:
 
 
 def effective_deny_rules(deny_rules: list[str] | None) -> list[str]:
-    """Default rule first, then the owner's rules. The owner cannot remove the default."""
-    return [PUSH_DENY] + [r for r in (deny_rules or []) if r != PUSH_DENY]
+    """Default rules first, then the owner's rules. The owner cannot remove the defaults."""
+    return DEFAULT_DENY + [r for r in (deny_rules or []) if r not in DEFAULT_DENY]
 
 
 def tools_for(

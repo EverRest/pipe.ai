@@ -37,8 +37,11 @@ def load_state() -> dict:
     return _read(pipe_home() / "state.json", {})
 
 
-def save_state(**updates: str) -> None:
-    """Merge keys into state.json. last_seen_ts moves forward only."""
+def save_state(**updates) -> None:
+    """Merge keys into state.json (also bot_id, agents_channel_id, card, summary_hash).
+
+    last_seen_ts moves forward only.
+    """
     st = load_state()
     new = updates.get("last_seen_ts")
     if new is not None and float(new) <= float(st.get("last_seen_ts") or 0):

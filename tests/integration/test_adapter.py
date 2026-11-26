@@ -113,3 +113,19 @@ def test_status_query_no_runtime():
     t.raise_event(ev(t, text="<@B1> who works on what?"))
     assert r.inputs == []
     assert "bob | r | b | idle" in t.posts[0]["text"]
+
+
+def test_owner_tools_off_when_thread_has_other_person():
+    a, t, r = make()
+    p = t.add_message(CH, "context", sender_id="U_X")
+    m = t.add_message(CH, "<@B1> hi", sender_id="U_OWNER", thread=p.ts)
+    t.raise_event(MentionEvent(CH, m.ts, m.thread, "U_OWNER", False, m.text, "E9"))
+    assert r.inputs[0].requester_is_owner is False
+
+
+def test_owner_tools_on_when_thread_is_owner_and_bot_only():
+    a, t, r = make()
+    p = t.add_message(CH, "note", sender_id="B_OTHER", sender_is_bot=True)
+    m = t.add_message(CH, "<@B1> hi", sender_id="U_OWNER", thread=p.ts)
+    t.raise_event(MentionEvent(CH, m.ts, m.thread, "U_OWNER", False, m.text, "E9"))
+    assert r.inputs[0].requester_is_owner is True

@@ -9,3 +9,9 @@ def pipe_home(tmp_path, monkeypatch):
     monkeypatch.setenv("PIPE_HOME", str(home))
     monkeypatch.delenv("PIPE_RUNTIME", raising=False)
     return home
+
+
+@pytest.fixture(autouse=True)
+def fake_home(tmp_path, monkeypatch):
+    """Discovery reads HOME: never the real one."""
+    monkeypatch.setenv("HOME", str(tmp_path / "nohome"))

@@ -7,7 +7,7 @@ import pytest
 from pipe.config import Config
 from pipe.core.contract import RuntimeFailed, RuntimeInput
 from pipe.runtime_claude import ClaudeRuntime, build_cmd, build_prompt
-from pipe.runtime_claude_tools import tools_for
+from pipe.runtime_claude_tools import effective_deny_rules, tools_for
 
 CFG = Config(agent_name="a", slack_tokens="keychain:x", repo_roots=["/r1", "/r2"])
 INP = dict(thread=[{"user": "bob", "text": "hi"}], task={"id": "t1", "purpose": "chat"})
@@ -55,7 +55,7 @@ def test_owner_cmd():
     ]  # fmt: skip
     assert cmd.count("--add-dir") == 1 and val(cmd, "--add-dir") == "/r2"
     j = cmd.index("--disallowedTools")
-    assert cmd[j + 1 : j + 3] == ["Bash(git push:*)", "Bash(rm:*)"]
+    assert cmd[j + 1 : j + 9] == [*effective_deny_rules([]), "Bash(rm:*)"]
     assert val(cmd, "--model") == "opus" and val(cmd, "--max-budget-usd") == "1.5"
     assert "--restricted" in cmd and "--strict-mcp-config" in cmd
 
@@ -126,3 +126,48 @@ def test_failures(fake, reason):
 def test_prompt_untrusted_no_trust_data():
     p = build_prompt(INP["thread"], {"id": "t1", "purpose": "chat", "hop": 3})
     assert "untrusted" in p.lower() and "bob" in p and "hop" not in p.lower()
+
+
+def _prep(plugin=True, mcp=True):
+    from pipe.runtime_claude_load import PreparedLoad
+
+    return PreparedLoad(
+        Path("/run/x/exposed-plugin") if plugin else None,
+        Path("/run/x/mcp.json") if mcp else None,
+        ["Skill"] if plugin else [],
+        (["Skill(pipe-exposed:s)"] if plugin else []) + (["mcp__gl"] if mcp else []),
+    )
+
+
+def test_build_cmd_prepared_none_is_001():
+    pol = tools_for(True, ["Read"], [])
+    assert build_cmd(CFG, pol, None) == build_cmd(CFG, pol)
+    assert "--plugin-dir" not in build_cmd(CFG, pol) and "--mcp-config" not in build_cmd(CFG, pol)
+
+
+def test_build_cmd_prepared_flags():
+    pol = tools_for(True, ["Read"], [])
+    cmd = build_cmd(CFG, pol, _prep())
+    assert val(cmd, "--plugin-dir") == "/run/x/exposed-plugin"
+    assert val(cmd, "--mcp-config") == "/run/x/mcp.json"
+    assert "--strict-mcp-config" in cmd and "--restricted" in cmd
+    assert val(cmd, "--permission-mode") == "dontAsk"
+    assert val(cmd, "--tools") == "Read,Skill"
+    rules = cmd[cmd.index("--allowedTools") + 1 :]
+    assert "Skill(pipe-exposed:s)" in rules and "mcp__gl" in rules and "Read(//r1/**)" in rules
+
+
+def test_build_cmd_prepared_non_owner_and_partial():
+    pol = tools_for(False, [], [])
+    cmd = build_cmd(CFG, pol, _prep(plugin=False))
+    assert val(cmd, "--tools") == "" and "--plugin-dir" not in cmd
+    assert val(cmd, "--allowedTools") == "mcp__gl"
+    cmd = build_cmd(CFG, pol, _prep(mcp=False))
+    assert val(cmd, "--tools") == "Skill" and "--mcp-config" not in cmd
+
+
+def test_build_cmd_empty_prepared_adds_nothing():
+    from pipe.runtime_claude_load import PreparedLoad
+
+    pol = tools_for(True, ["Read"], [])
+    assert build_cmd(CFG, pol, PreparedLoad(None, None, [], [])) == build_cmd(CFG, pol)

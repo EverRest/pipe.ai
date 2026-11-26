@@ -80,3 +80,19 @@ def test_session_id_rejects_traversal(pipe_home):
             state.load_session(bad)
     state.save_session("ok-1_a", {"a": 1})
     assert state.load_session("ok-1_a") == {"a": 1}
+
+
+def test_card_keys_round_trip_and_keep_others(pipe_home):
+    state.save_state(last_seen_ts="100.000000")
+    card = {"channel": "C1", "ts": "1.0", "hash": "h"}
+    state.save_state(bot_id="B1", agents_channel_id="C9", card=card)
+    state.save_state(summary_hash="abc")
+    st = state.load_state()
+    assert st == {
+        "last_seen_ts": "100.000000",
+        "bot_id": "B1",
+        "agents_channel_id": "C9",
+        "card": card,
+        "summary_hash": "abc",
+    }
+    assert mode(pipe_home / "state.json") == 0o600

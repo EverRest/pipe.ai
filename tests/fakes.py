@@ -1,5 +1,6 @@
 """Test doubles. No chat library needed."""
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -37,6 +38,8 @@ class FakeTransport:
         self.handlers: list = []
         self.reconnect_callbacks: list = []
         self.link_down = False
+        self.fail_update: str | None = None  # e.g. "message_not_found"
+        self.fail_dm: Exception | None = None
         self._held: list[Message] = []
         self._n = 0
 
@@ -85,6 +88,8 @@ class FakeTransport:
         return ts
 
     def update_message(self, channel, ts, text, metadata=None, buttons=None):
+        if self.fail_update:
+            raise RuntimeError(self.fail_update)
         self.updates.append(
             {"channel": channel, "ts": ts, "text": text, "metadata": metadata, "buttons": buttons}
         )
@@ -118,7 +123,13 @@ class FakeTransport:
     def list_pins(self, channel):
         return list(self.pins.get(channel, []))
 
+    def unpin(self, channel, ts):
+        """Test helper: the pin is removed on demand."""
+        self.pins[channel].remove(ts)
+
     def send_dm(self, user_id, text):
+        if self.fail_dm:
+            raise self.fail_dm
         self.dms.append((user_id, text))
 
     def upload_file(self, channel, thread, name, data, title):
@@ -197,3 +208,36 @@ class FakeKeychain:
 
     def __call__(self, service, account):
         return self.tokens[account]
+
+
+FAKE_URL = "https://fake-mcp.example/x"
+FAKE_SECRET = "fake-secret-header"  # noqa: S105
+
+
+def _w(p: Path, text: str):
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text)
+
+
+def _skill(d: Path, name: str, extra: str = ""):
+    _w(d / name / "SKILL.md", f"---\nname: {name}\ndescription: d {name}\n{extra}---\nbody\n")
+
+
+def build_claude_tree(tmp_path: Path) -> tuple[Path, list[str]]:
+    """Fake home and repo_roots: one plugin, personal skills and commands, MCP, two repos."""
+    home, repos = tmp_path / "home", tmp_path / "repos"
+    c, plug = home / ".claude", home / "plugstore" / "pa"
+    _w(plug / ".claude-plugin" / "plugin.json", json.dumps({"name": "pa"}))
+    inst = {"version": 2, "plugins": {"pa@m": [{"installPath": str(plug)}]}}
+    _w(c / "plugins" / "installed_plugins.json", json.dumps(inst))
+    _w(c / "settings.json", json.dumps({"enabledPlugins": {"pa@m": True}}))
+    _skill(plug / "skills", "clean", "tags: [review]\n")
+    _skill(plug / "skills", "cred", f"allowed-tools: Bash\nenv: {FAKE_SECRET}\n")
+    _w(plug / "commands" / "cmd.md", "---\ndescription: c\n---\nbody")
+    _skill(c / "skills", "mine")
+    _w(c / "commands" / "mycmd.md", "body only")
+    servers = {"gl": {"url": FAKE_URL, "headers": {"A": FAKE_SECRET}}}
+    _w(home / ".claude.json", json.dumps({"mcpServers": servers}))
+    for r in ("one", "two"):
+        (repos / r / ".git").mkdir(parents=True)
+    return home, [str(repos)]

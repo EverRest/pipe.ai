@@ -52,3 +52,28 @@ def test_upload_refusals(tmp_path, pipe_home):
     assert t.uploads == []
     t.upload_file("C1", "1.0", "n", ok, "t")
     assert t.uploads[0]["size"] == 5
+
+
+def test_fail_hooks_and_unpin():
+    t = FakeTransport()
+    ts = t.post_message("C1", "x")
+    t.pin("C1", ts)
+    t.unpin("C1", ts)
+    assert t.list_pins("C1") == []
+    t.fail_update = "message_not_found"
+    with pytest.raises(RuntimeError, match="message_not_found"):
+        t.update_message("C1", ts, "y")
+    t.fail_dm = RuntimeError("boom")
+    with pytest.raises(RuntimeError):
+        t.send_dm("U1", "hi")
+    assert t.dms == []
+
+
+def test_build_claude_tree(tmp_path):
+    from fakes import build_claude_tree
+    from pipe.runtime_claude_discovery import discover
+
+    home, roots = build_claude_tree(tmp_path)
+    ids = {c.id for c in discover(home, roots)[0]}
+    assert {"skill:mine", "skill:pa:clean", "skill:pa:cred", "command:mycmd", "mcp:gl"} <= ids
+    assert {"repo:one", "repo:two"} <= ids

@@ -3,9 +3,15 @@
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
+from pipe.core.capability import sanitize_tags
+from pipe.core.card import _PATH, _URL, _strings
+from pipe.core.schema import check_schema
+from pipe.core.scrub import scrub
+from pipe.runtime_claude_tools import is_broad_bash
 from pipe.state import pipe_home
 
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\[\]-]*$")
@@ -28,6 +34,11 @@ class Config:
     model: str | None = None
     step_timeout_min: int = 30
     warnings: tuple[str, ...] = ()
+    exposed: list[str] = field(default_factory=list)
+    tags: dict[str, list[str]] = field(default_factory=dict)
+    description: str = ""
+    agents_channel: str = "pipe-agents"
+    capabilities: list[dict] = field(default_factory=list)  # validated declared entries
 
 
 def _strs(val, key: str) -> list[str]:
@@ -42,6 +53,91 @@ def _has_token(v) -> bool:
     if isinstance(v, dict):
         v = list(v.values())
     return isinstance(v, list) and any(_has_token(x) for x in v)
+
+
+_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
+_COMMON = {"id", "runtime", "name", "description", "access", "tags", "timeout_s"}
+_COMMON |= {"input_schema", "output_schema"}
+_KEYS = {"exec": _COMMON | {"command", "env_allow"}, "http": _COMMON | {"url", "token"}}
+_REQ = {"exec": ("command",), "http": ("url",)}
+_ENV = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_LOCAL = ("localhost", "127.0.0.1")
+
+
+def _tag_list(val, where: str) -> list[str]:
+    if not isinstance(val, list) or len(val) > 8 or sanitize_tags(val) != tuple(val):
+        raise ConfigError(f"{where}: tags must be a list of at most 8 tags [a-z0-9-], max 32 chars")
+    return val
+
+
+def _cap(e, i: int) -> dict:
+    """One declared entry. Errors name the entry, never a command, URL, or token."""
+    if not isinstance(e, dict):
+        raise ConfigError(f"capabilities[{i}] must be a mapping")
+    cid, rt = e.get("id"), e.get("runtime")
+    who = f"capability {rt}:{cid}" if isinstance(cid, str) else f"capabilities[{i}]"
+    bad = lambda msg: ConfigError(f"{who}: {msg}")  # noqa: E731
+    if rt not in _KEYS:
+        raise bad("runtime must be exec or http")
+    if extra := set(e) - _KEYS[rt]:
+        raise bad(f"unknown keys: {sorted(map(str, extra))}")
+    for k in ("id", "name", "description", "access", *_REQ[rt]):
+        if k not in e:
+            raise bad(f"missing key {k}")
+    if not (isinstance(cid, str) and _ID.fullmatch(cid)):
+        raise bad("bad id")
+    if not (isinstance(e["name"], str) and 1 <= len(e["name"]) <= 80):
+        raise bad("name must be 1 to 80 characters")
+    if not (isinstance(e["description"], str) and len(e["description"]) <= 200):
+        raise bad("description must be at most 200 characters")
+    if e["access"] != "read":
+        raise bad("access must be read")
+    t = e.get("timeout_s", 1)
+    if isinstance(t, bool) or not isinstance(t, int) or not 1 <= t <= 3600:
+        raise bad("timeout_s must be an integer from 1 to 3600")
+    _tag_list(e.get("tags", []), who)
+    out = dict(e)
+    if rt == "exec":
+        cmd = e["command"]
+        if not (isinstance(cmd, list) and cmd and all(isinstance(x, str) and x for x in cmd)):
+            raise bad("command must be a non-empty list of strings")
+        if not Path(cmd[0]).expanduser().is_absolute():
+            raise bad("command[0] must be an absolute path")
+        out["command"] = [str(Path(cmd[0]).expanduser()), *cmd[1:]]
+        env = e.get("env_allow", [])
+        if not (isinstance(env, list) and all(_ENV.fullmatch(str(x)) for x in env)):
+            raise bad("env_allow must be a list of variable names")
+    else:
+        u = urlparse(e["url"]) if isinstance(e["url"], str) else None
+        ok = u and (u.scheme == "https" or (u.scheme == "http" and u.hostname in _LOCAL))
+        if not (ok and u.hostname and u.username is None and u.password is None):
+            raise bad("url must be https (http only for localhost) with no user name or password")
+        tok = e.get("token")
+        if tok is not None and not (isinstance(tok, str) and re.fullmatch(r"keychain:\S+", tok)):
+            raise bad("token must be keychain:<service>")
+    for k in ("input_schema", "output_schema"):
+        if k in e:
+            if check_schema(e[k]):
+                raise bad(f"{k} is not a valid schema")
+            for s in _strings(e[k]):
+                if _URL.search(s) or _PATH.search(s) or scrub(s) != s:
+                    raise bad(f"{k} holds a URL, a path, or a token-like string")
+    return out
+
+
+def _caps(raw, exposed: list[str]) -> list[dict]:
+    if not isinstance(raw, list):
+        raise ConfigError("capabilities must be a list")
+    out = [_cap(e, i) for i, e in enumerate(raw)]
+    seen = set()
+    for e in out:
+        key = f"{e['runtime']}:{e['id']}"
+        if key in seen:
+            raise ConfigError(f"capability {key} is declared twice")
+        seen.add(key)
+        if e["runtime"] == "exec" and key in exposed and "input_schema" not in e:
+            raise ConfigError(f"capability {key} is exposed and has no input_schema")
+    return out
 
 
 def validate_config(raw: dict) -> Config:
@@ -71,6 +167,8 @@ def validate_config(raw: dict) -> Config:
     kw: dict = {}
     if "owner_tools" in rt:
         kw["owner_tools"] = _strs(rt["owner_tools"], "runtime.claude.owner_tools")
+        if any(is_broad_bash(r) for r in kw["owner_tools"]):
+            raise ConfigError("owner_tools: broad Bash rule not allowed; use Bash(<cmd>:*)")
     roots = (
         _strs(rt["repo_roots"], "runtime.claude.repo_roots") if "repo_roots" in rt else ["~/code"]
     )
@@ -91,6 +189,19 @@ def validate_config(raw: dict) -> Config:
     channel = raw.get("status_channel", "pipe-status")
     if not isinstance(channel, str) or not channel:
         raise ConfigError("status_channel must be a non-empty string")
+    exposed = _strs(raw.get("exposed", []), "exposed")
+    tag_map = raw.get("tags", {})
+    if not isinstance(tag_map, dict) or not all(isinstance(k, str) and k for k in tag_map):
+        raise ConfigError("tags must be a map from a capability ID to a list of tags")
+    for k, v in tag_map.items():
+        _tag_list(v, f"tags[{k}]")
+    desc = raw.get("description", f"Claude Code agent {name}")
+    if not isinstance(desc, str) or len(desc) > 200:
+        raise ConfigError("description must be a string of at most 200 characters")
+    agents = raw.get("agents_channel", "pipe-agents")
+    if not isinstance(agents, str) or not agents:
+        raise ConfigError("agents_channel must be a non-empty string")
+    caps = _caps(raw.get("capabilities", []), exposed)
     warnings = () if owner else ("owner is empty: no sender gets tools",)
     return Config(
         agent_name=name,
@@ -103,6 +214,11 @@ def validate_config(raw: dict) -> Config:
         model=model,
         step_timeout_min=timeout,
         warnings=warnings,
+        exposed=exposed,
+        tags=tag_map,
+        description=desc,
+        agents_channel=agents,
+        capabilities=caps,
         **kw,
     )
 

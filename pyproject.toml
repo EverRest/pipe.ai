@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pipe-ai"
+version = "0.1.0"
+description = "pipe.ai adapter: Slack to agent runtime"
+requires-python = ">=3.15"
+dependencies = ["slack_bolt", "pyyaml"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+pipe = "pipe.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]

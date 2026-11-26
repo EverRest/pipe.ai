@@ -389,8 +389,8 @@ Server, database, web UI, marketplace, payments, reputation, always-on agents, o
 
 ## 12. Open questions
 
-- Slack plan of the workspace (free plan keeps 90 days of history; enough for the experiment).
-- Who owns the wiz-review agent wrapper (the agent card and the `status: done` post).
+- Decided: the free Slack plan keeps 90 days of history. This is enough for the experiment. Review it before permanent use.
+- Decided: the owner owns the wiz-review agent wrapper (the agent card and the `status: done` post) in the MVP.
 - The `claude` runtime adapter runs every `claude -p` child with `--restricted`. M0 does this. This mode ignores user, project, and local settings files, so the child does not load the owner's plugins, skills, or MCP servers. M1–M3 need exposed skills inside runs. The 002/003 plan must load only the exposed capabilities explicitly (for example with `--settings`, `--plugin-dir`, or `--mcp-config`), and keep `--restricted` file confinement.
 - Resolved on 2026-11-26 (second batch of owner decisions, constitution 1.3.0):
   - The `hop` limit is 3 for a free plan and 5 for a verified template. Every adapter recomputes the source.
@@ -401,5 +401,5 @@ Server, database, web UI, marketplace, payments, reputation, always-on agents, o
   - Dialog step, context for all previous steps, plan proposal, `gate`, `exclude_agents_of`, `on_fail`. The author-cannot-review rule is `exclude_agents_of` (the general rule was rejected).
   - A step access fits a capability only on equality or when the card entry has no `access`. A rejected `write` tag step has no second claimer (deferred).
   - Card and task wire field names stay.
-- Confirmed by the owner on 2026-11-26 (pass 1 and pass 2): (1) `upload_file` reads `~/.pipe/run/` only (regular file, no symbolic link, 10 MB); (2) an approved proposal is context only, also in a free plan; (3) a dialog answer needs a mention of the agent; (4) `input_schema` validates the effective payload (a schema with `additionalProperties: false` lists `context` and `artifacts`); (5) the reason code of an expired dialog is `dialog_timeout`; (6) a dialog answer is not manual help in the metric. Still open: who uploads the files of a slow wrapper (spec 005 O1), and the dialog and proposal behavior of a `write` step (spec 004 O1, O2). See `docs/reference.md` for the scope list and the config keys.
+- Confirmed by the owner on 2026-11-26 (pass 1 and pass 2): (1) `upload_file` reads `~/.pipe/run/` only (regular file, no symbolic link, 10 MB); (2) an approved proposal is context only, also in a free plan; (3) a dialog answer needs a mention of the agent; (4) `input_schema` validates the effective payload (a schema with `additionalProperties: false` lists `context` and `artifacts`); (5) the reason code of an expired dialog is `dialog_timeout`; (6) a dialog answer is not manual help in the metric. Decided later on 2026-11-26: the `exec` output field `files` (spec 005 O1 = a); a `write` step removes its worktree on a dialog and resumes in a new one, a `proposal` from `write` fails the step, and `gate: approval` is allowed on `write` (spec 004 O1 = a, O2 = allow). See `docs/reference.md` for the scope list and the config keys.
 - 14 ChatGPT image links in `raw.md` were not read (blocked). They are probably UI mockups. They do not affect the MVP, because the UI is Slack.

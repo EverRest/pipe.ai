@@ -52,7 +52,7 @@ New core code is small: one core module (`trigger.py`), a few rules in `pipeline
 
 Technology and Security Constraints: tokens in Keychain for the adapter (PASS: no new adapter token). The trigger token is a masked CI variable and is never in a file (PASS: FR-023, T026, T028, T030). Scrub before post (PASS: the trigger script and the adapter scrub every text and reason). Cards hold no MCP URL, token, or path (PASS: `build_card` output passes `validate_card`). `hop` by plan source (PASS: the trigger has `hop` 0). Core uses the `Transport` port only (PASS: `upload_file`, T036).
 
-**Result**: PASS. No deviation. No Complexity Tracking row. The design decisions DQ1 to DQ9 are in "Design decisions". One question (O1) is open. The tasks follow the recommended option.
+**Result**: PASS. No deviation. No Complexity Tracking row. The design decisions DQ1 to DQ9 are in "Design decisions". The question O1 is decided (a). The tasks follow it.
 
 ## Design decisions
 
@@ -78,9 +78,9 @@ The owner confirmed these decisions on 2026-11-26 (pass 2). The tasks follow the
 
 **Transport and files.** The core uses the `Transport` port only (no Slack in the core). The adapter uploads the files of a wrapper with `Transport.upload_file` (scope `files:write`, 10 MB, regular file in `~/.pipe/run/`, no symbolic link, else `UploadRefused`). Affected tasks: T036, T037.
 
-## Open design question (pass 2, not decided)
+## Design question O1 (pass 2, decided 2026-11-26)
 
-- **O1. Who reports the files of a wrapper?** The runtime output of spec 001 has no field for files. This spec adds the optional output field `files` (list of paths) for the `exec` adapter. The stepper (outside the core) uploads them and appends the links to `artifacts`. Options: (a) the optional field `files` in the `exec` output, as written here (small, additive; needs one line in spec 001 `runtime-exec-http.md`); (b) the wrapper puts the paths in `data` and the stepper reads a convention (hidden coupling); (c) no upload, and the wrapper prints only links (needs a file host that the owner does not have). Recommendation: (a). The tasks T036 and T037 follow (a).
+- **O1. Who reports the files of a wrapper?** The runtime output of spec 001 has no field for files. This spec adds the optional output field `files` (list of paths) for the `exec` adapter. The stepper (outside the core) uploads them and appends the links to `artifacts`. Options: (a) the optional field `files` in the `exec` output, as written here (small, additive; needs one line in spec 001 `runtime-exec-http.md`); (b) the wrapper puts the paths in `data` and the stepper reads a convention (hidden coupling); (c) no upload, and the wrapper prints only links (needs a file host that the owner does not have). **Decided: (a).** The tasks T036 and T037 follow (a). The line in spec 001 `runtime-exec-http.md` exists.
 
 ## Changes to 001 to 004
 

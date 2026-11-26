@@ -1,6 +1,6 @@
 # Research: Review Capability and External Triggers
 
-All items are resolved. One question (O1) is open in [plan.md](plan.md). The owner decisions DQ1 to DQ9 are in "Design decisions" of plan.md. Source: `docs/design-brief.md` §3 (decisions 8, 14, 15, 18), §6 (Triggers, Review), §9 (M4), constitution v1.3.0. No Slack access and no network call was used.
+All items are resolved. The question O1 is decided in [plan.md](plan.md) (option a). The owner decisions DQ1 to DQ9 are in "Design decisions" of plan.md. Source: `docs/design-brief.md` §3 (decisions 8, 14, 15, 18), §6 (Triggers, Review), §9 (M4), constitution v1.3.0. No Slack access and no network call was used.
 
 ## Checked in the repository (2026-11-26)
 
@@ -72,7 +72,7 @@ All items are resolved. One question (O1) is open in [plan.md](plan.md). The own
 ### D13. Metrics
 - Decision: no change. `compute_metrics` (003) reads the thread messages. A trigger pipeline is a normal pipeline. A trigger thread has a bot as starter. The "chat pipelines" metric counts it when it has no human message after the start (003 Q8). The owner can read the starter ID to split trigger pipelines later.
 
-### D14. Files of a wrapper (open question O1)
+### D14. Files of a wrapper (question O1, decided: a)
 - Decision: the optional output field `files` of the `exec` adapter. The stepper (outside the core) calls `Transport.upload_file` for each path and appends the links to `artifacts`. `UploadRefused` gives `reason: upload refused`. The core never reads a file.
 - Rationale: spec 001 FR-024 says the caller puts the link in `artifacts`, and no spec names the caller. The wrapper holds no Slack token, so it cannot upload. See plan.md O1.
 

@@ -197,7 +197,7 @@ A CI job (for example a GitLab schedule or event) posts a mention in `#pipe-work
 - The owner of the reviewer agent exposes the review capability. A capability that uses the owner credentials is `owner-only` until the owner exposes it (principle III).
 - GitLab Pipeline schedules are created in the GitLab UI.
 - The Slack workspace and `#pipe-work` exist.
-- The owner of the wiz-review agent wrapper is not decided (open question in the design brief §12).
+- The owner of the wiz-review agent wrapper is the repository owner in the MVP (decided 2026-11-26).
 
 ## Notes for /speckit-plan
 

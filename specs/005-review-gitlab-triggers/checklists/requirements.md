@@ -43,5 +43,5 @@
 
 - The directory name is historical. The spec title is generic.
 - Tool names (Slack, GitLab, wiz-review) name the product surface from the design brief. They are not implementation choices.
-- The owner decisions DQ1 to DQ9 are in "Design decisions" of plan.md (confirmed 2026-11-26). One question (O1, the `files` output field) is open. The tasks follow the recommendation.
+- The owner decisions DQ1 to DQ9 are in "Design decisions" of plan.md (confirmed 2026-11-26). The question O1 (the `files` output field) is decided: option (a).
 - Pass 2 added FR-024 to FR-027 and SC-013 to SC-016 (wrapper contract, `on_fail`, upload, `exclude_agents_of`, trigger forms).

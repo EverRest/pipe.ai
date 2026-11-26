@@ -89,12 +89,12 @@ Repo paths and names never go into the card, so 002 FR-017 stays unchanged. `val
 
 **DQ8 = (a). `write_tools` has no bare `Bash`.** `write_tools` defaults to `[Read, Grep, Glob, Edit, Write]`. A scoped `Bash(<cmd>:*)` entry is allowed. A bare `Bash` entry is a config error. Reason: a `Bash` tool runs with the user rights of the owner and can leave the worktree. The path rules do not confine it. The cost: the agent cannot run tests by default. The MR review and CI check the change. Affected tasks: T003, T004, T020, T027.
 
-## Open design questions (pass 2, not decided)
+## Design questions O1 and O2 (pass 2, decided 2026-11-26)
 
-These points came out of the full analyze. The owner has not decided them. They affect only a `write` step.
+These points came out of the full analyze. The owner accepted the recommendation for each. They affect only a `write` step.
 
-- **O1. Dialog or proposal in a `write` step.** A runtime result `waiting` with `needs_input` (003 N1) ends `run_write` before a commit. Options: (a) remove the worktree, post the question, and start a new worktree on the resume (no state, simple); (b) keep the worktree during the dialog (state, a leak risk, needs a sweep rule). Recommendation: (a). The resume is the same claim, so the owner gate does not ask again. A `proposal` from a `write` run is treated as `done` without a proposal: the step ends `failed`, `reason: runtime status proposal`. The owner should confirm.
-- **O2. `gate: approval` on a `write` step.** Two gates can apply: the owner gate (type 4) before the run, and the type 5 gate after the run (MR link in the gate message). Recommendation: allow it. The order is fixed: the owner gate first, then the run, then the type 5 gate.
+- **O1. Dialog or proposal in a `write` step.** A runtime result `waiting` with `needs_input` (003 N1) ends `run_write` before a commit. Options: (a) remove the worktree, post the question, and start a new worktree on the resume (no state, simple); (b) keep the worktree during the dialog (state, a leak risk, needs a sweep rule). **Decided: (a).** The resume is the same claim, so the owner gate does not ask again. A `proposal` from a `write` run is treated as `done` without a proposal: the step ends `failed`, `reason: runtime status proposal`.
+- **O2. `gate: approval` on a `write` step.** Two gates can apply: the owner gate (type 4) before the run, and the type 5 gate after the run (MR link in the gate message). **Decided: allow it.** The order is fixed: the owner gate first, then the run, then the type 5 gate.
 
 ## Project Structure
 

@@ -65,5 +65,6 @@ The owner accepted the recommended option for each item below. Review them befor
 
 ## 6. Open items
 
-- §12 of the brief: the Slack plan, and who owns the wiz-review wrapper config.
+- None in the specs. Decided on 2026-11-26: free Slack plan for the experiment, the owner owns the wiz-review wrapper, 004 O1/O2 and 005 O1 as recommended.
+- Open check: whether Slack sends `app_mention` for a bot mention. Run it first (see section 4).
 - `docs/raw.md` (the source idea) is not in this repository.

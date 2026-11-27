@@ -495,3 +495,11 @@ def test_step_status_is_latest_trusted_by_numeric_ts():
     assert step_status(state([plan_msg(), new, old]), 0) == "done"  # 999 < 1000 as numbers
     forged = _task(11, "B9", "step", "failed", 1, step=0)
     assert step_status(state([plan_msg(), old, forged]), 0) == "claimed"  # no card: ignored
+
+
+def test_handoff_needs_started_plan():
+    base = [plan_msg(), claim(3, "B1", 0, "done"), handoff(4, "B1", "B2", 1, 0, 2)]
+    st = state(base, me="B2")
+    assert act(bot_ev(base[-1]), st) == ("ignore", "not_started")
+    st = state([base[0], start_msg(), *base[1:]], me="B2")
+    assert act(bot_ev(base[-1]), st)[0] == "claim"

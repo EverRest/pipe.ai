@@ -8,6 +8,7 @@ from typing import Any
 
 from pipe.core.claim import claim_excluded, resolve_claim, ts_key
 from pipe.core.contract import ClickEvent, MentionEvent, ReactionEvent
+from pipe.core.gate import step_rejected
 from pipe.core.pipeline import Pipeline, Step, matches_tag
 from pipe.core.router import should_handle
 from pipe.core.source import effective_source, hop_limit, parse_source
@@ -93,6 +94,17 @@ def dialog_expired(question_ts: str, now: float, hours: float) -> bool:
 def card_view(cards: dict) -> dict:
     """Card dicts as objects, for `validate_plan` and `matches_tag`."""
     return {k: SimpleNamespace(**v) for k, v in cards.items()}
+
+
+def owner_gate(p) -> bool:
+    """Type 4 gate: a `write` claim that waits for the owner. A type 5 gate has `artifacts`."""
+    return bool(
+        p["phase"] == "step"
+        and p["status"] == "needs_approval"
+        and p.get("access") == "write"
+        and "artifacts" not in p
+        and not p.get("next")
+    )
 
 
 def _int(x) -> bool:
@@ -219,10 +231,26 @@ class View:
 
     def gate_pending(self, i) -> bool:
         x = self.last(i)
-        return bool(x and x[1]["status"] == "needs_approval" and x[1].get("access") != "approve")
+        ok = x and x[1]["status"] == "needs_approval" and x[1].get("access") != "approve"
+        return bool(ok and not owner_gate(x[1]))
+
+    def owner_gate_pending(self, i) -> bool:
+        x = self.last(i)
+        return bool(x and owner_gate(x[1]))
+
+    def rejected(self, i) -> bool:
+        """FR-046: the latest claim of step `i` is `failed`, `rejected`."""
+        cl = [
+            SimpleNamespace(step=i, ts=m.ts, status=p["status"], reason=p.get("reason"))
+            for m, p in self.claims.get(i, ())
+        ]
+        return step_rejected(cl, i)
 
     def started(self) -> bool:
-        return any(p["phase"] == "plan" and p["status"] == "done" for _, p in self.base)
+        return any(
+            p["phase"] == "plan" and p["status"] == "done" and p["by"] == self.planner
+            for _, p in self.base
+        )
 
     def owner(self, agent) -> str | None:
         return (self.ts.cards.get(agent) or {}).get("owner") or None
@@ -311,6 +339,8 @@ def _bot(ev: BotMessage, v: View) -> Decision:
         return _ign("not_handoff")
     if not v.plan:
         return _ign("not_planner" if v.plan_any else "no_plan")
+    if p["phase"] != "plan" and not v.started():
+        return _ign("not_started")
     i = (nxt.get("payload") or {}).get("step")
     if not _int(i) or not 0 <= i < len(v.steps):
         return _ign("bad_payload")
@@ -338,7 +368,8 @@ def _bot(ev: BotMessage, v: View) -> Decision:
         return _ign("not_for_me")
     elif step.get("agent") != me:
         return _ign("not_assigned")
-    if nxt.get("access") != "read" or step.get("access") != "read":
+    # access comes from the plan; the message must agree with it
+    if step.get("access") not in ("read", "write") or nxt.get("access") != step["access"]:
         return _ign("unsupported_access")
     refused = any(
         x[1]["status"] == "failed" and str(x[1].get("reason", "")).startswith("hop limit exceeded")
@@ -350,8 +381,7 @@ def _bot(ev: BotMessage, v: View) -> Decision:
         return _ign("stopped")
     if claim_excluded(v.pipe.steps[i], me, v.agent.get):
         return _ign("excluded")
-    last = v.last(i)
-    if last and last[1]["status"] == "failed" and last[1].get("reason") == "rejected":
+    if v.rejected(i):
         return _ign("rejected")
     own = any(ts_key(m.ts) > ts_key(ev.ts) and p2["by"] == me for m, p2 in v.msgs[i])
     if own or f"step:{ts.channel}:{ts.thread_ts}:{i}" in ts.in_flight:
@@ -389,9 +419,16 @@ def _click(ev: ClickEvent, v: View) -> Decision:
     if not hit or hit[1]["by"] != ts.self_id:
         return _ign("no_target")
     m, p = hit
+    i = p.get("step")
+    if ev.action_id in ("pipe_accept", "pipe_reject"):
+        owner = v.owner(ts.self_id)
+        if not owner or ev.sender_id != owner:
+            return _ign("not_owner")
+        if not (_int(i) and v.owner_gate_pending(i) and v.last(i)[0].ts == m.ts):
+            return _ign("not_pending")
+        return Decision(ev.action_id[5:], arg=m)
     if not v.allowed(ev.sender_id, ts.self_id):
         return _ign("not_allowed")
-    i = p.get("step")
     if ev.action_id == "pipe_approve":
         cur = v.last(i) if _int(i) and i < len(v.steps) else None
         if cur and cur[0].ts == m.ts and p.get("access") == "approve":

@@ -71,7 +71,8 @@ def test_bad_source():
 
 
 def test_access():
-    has(v([bot(access="write")]), "not supported before spec 004")
+    assert v([bot("B1", "cap-w", access="write")]) == []
+    has(v([{**human(), "access": "write"}]), "step 1")
     has(v([bot(access="zzz")]), "step 1")
     has(v([bot(access="approve")]), "step 1")
     has(v([bot(kind="agent")]), "kind")

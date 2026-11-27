@@ -10,6 +10,8 @@ from pathlib import Path
 
 from pipe.config import Config
 from pipe.core.contract import RuntimeFailed, RuntimeInput, RuntimeOutput, parse_output
+from pipe.git_io import Git
+from pipe.runtime_claude_delegate import run_write
 from pipe.runtime_claude_discovery import discover, read_mcp_entries
 from pipe.runtime_claude_load import PreparedLoad, cleanup, prepare
 from pipe.runtime_claude_loadset import load_set
@@ -118,9 +120,11 @@ class ClaudeRuntime:
         escape_mentions: Callable[[str], str] = lambda s: s,
         prepare: Callable = prepare,
         home: Path | None = None,
+        git: Git | None = None,
     ):
         self.cfg, self.runner, self.scrub, self.esc = cfg, runner, scrub, escape_mentions
         self.prepare, self.home = prepare, home
+        self.git = git or Git()
 
     def _load(self, inp: RuntimeInput, run_dir: Path) -> PreparedLoad | None:
         """Load only the exposed items of this step. None means a stage 001 run."""
@@ -138,6 +142,12 @@ class ClaudeRuntime:
 
     def run(self, inp: RuntimeInput) -> RuntimeOutput:
         cfg = self.cfg
+        if getattr(inp.request, "access", None) == "write":
+            home = self.home or Path.home()
+            caps, _ = discover(home, cfg.repo_roots)
+            return run_write(
+                inp, cfg, self.git, self.runner, caps, self.scrub, self.esc, self.prepare, home
+            )
         pol = tools_for(inp.requester_is_owner, cfg.owner_tools, cfg.deny_rules)
         cwd = _roots(cfg)[0]
         run_dir = pipe_home() / "run" / uuid.uuid4().hex

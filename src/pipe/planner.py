@@ -77,7 +77,7 @@ def build_prompt(goal: str, cards, flows=None) -> str:
         ]
         parts.append(f"<templates>\n{json.dumps(tpl, ensure_ascii=False)}\n</templates>")
     parts.append(
-        f"<untrusted_thread>\n{goal.replace('</untrusted_thread>', '')}\n</untrusted_thread>"
+        f"<untrusted_thread>\n{goal.replace('<', '&lt;').replace('>', '&gt;')}\n</untrusted_thread>"
     )
     return "\n".join(parts)
 

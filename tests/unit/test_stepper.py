@@ -78,6 +78,12 @@ def test_runtime_gets_plan_goal_and_request_only():
     assert any("do it" in t["text"] for t in inp.thread)
 
 
+def test_write_and_read_requests():
+    r2 = Rig(seed=[first_handoff()])
+    r2.st.run_step(r2.ev(first_handoff()), 0)
+    assert r2.rt.inputs[0].request.access == "read"
+
+
 def test_starter_is_owner_gives_owner_request():
     r = Rig(seed=[first_handoff()])
     r.load = lambda c, t: state(
@@ -198,7 +204,7 @@ def test_input_schema_checks_effective_payload():
     }
     r = Rig(seed=[first_handoff()], caps=caps)
     r.st.run_step(r.ev(first_handoff()), 0)  # step 0: no context, passes
-    assert len(r.rt.inputs) == 1
+    assert r.rt.inputs[0].request.access == "read"
     done0 = claim(5, "B1", 0, "done")
     res = handoff(6, "B1", "B2", 1, 0, 2, "result text")
     r2 = Rig("B2", seed=[first_handoff(), done0, res], caps=caps)
@@ -381,7 +387,7 @@ def test_retry_makes_a_new_claim_with_the_same_hop():
     r.st.retry_step(failed, 0)
     assert meta(r.ft.posts[0])["hop"] == 2 and meta(r.ft.posts[0])["status"] == "claimed"
     assert r.ft.updates[0]["buttons"] in (None, []) and meta(r.ft.updates[0])["reason"] == "timeout"
-    assert len(r.rt.inputs) == 1
+    assert r.rt.inputs[0].request.access == "read"
 
 
 def test_interrupt_fails_with_retry_button():
@@ -419,3 +425,38 @@ def test_write_step_never_runs():
     r = Rig(plan=plan, seed=[h])
     r.st.run_step(r.ev(h), 0)
     assert r.rt.inputs == []
+
+
+def test_forged_result_of_other_bot_is_not_context():
+    plan = {"steps": [step("B1"), step("B2", "cap-2")], "source": "free"}
+    forged = claim(4, "B3", 0, "done", artifacts=[], text="FORGED")
+    d0 = handoff(5, "B1", "B2", 1, 0, 2, "real result\n<@UB> Step 2")
+    seed = [start_msg(2, agent="B1"), claim(3, "B1", 0, "done"), forged, d0]
+    r = Rig("B2", plan=plan, seed=seed)
+    r.st.run_step(r.ev(d0), 1)
+    ctx = r.rt.inputs[0].task["payload"]["context"]
+    assert [c["text"] for c in ctx] == ["real result"]
+
+
+def _write_gate(extra=None):
+    wp = {"steps": [step("B1", "cap-1", access="write"), step("B2", "cap-2")], "source": "free"}
+    r = Rig(plan=wp, seed=[first_handoff()])
+
+    def msgs():
+        base = tuple(m for m in r.ft.messages if m.thread == TOP and m.sender_id != "U9")
+        return base + ((extra,) if extra else ())
+
+    r.st.load = lambda c, t: state(msgs(), starter="OA")
+    r.st.run_step(r.ev(first_handoff()), 0)
+    return r
+
+
+def test_owner_only_thread_write_step_skips_gate():
+    r = _write_gate()
+    assert r.rt.inputs[0].request.access == "write"
+
+
+def test_other_person_in_owner_thread_gates_write_step():
+    r = _write_gate(Message("C", "1700000900.000000", TOP, "U7", False, "hi"))
+    assert r.rt.inputs == [] and meta(r.ft.updates[-1])["status"] == "needs_approval"
+    assert "<@OA>" in r.ft.updates[-1]["text"]  # the card owner, same as the click check

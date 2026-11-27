@@ -46,9 +46,33 @@ def test_read_strips_write_tools_even_if_widened():
     assert {"Edit", "Write", "NotebookEdit"} <= set(m.policy.disallowed)
 
 
-def test_write_refused():
+def test_write_needs_workdir():
     with pytest.raises(ValueError):
         map_request(req(access="write"), cfg(), CAPS)
+
+
+@pytest.mark.parametrize("owner", [True, False])
+def test_write_tools_scoped_to_worktree(owner):
+    m = map_request(req(access="write", owner=owner), cfg(), CAPS, workdir="/wt/r1")
+    p = m.policy
+    assert p.tools == ["Read", "Grep", "Glob", "Edit", "Write"] and p.restricted
+    assert p.allowed == [f"{t}(//wt/r1/**)" for t in p.tools]
+    assert PUSH_DENY in p.disallowed
+    assert [n for n, _ in m.load.skills] == ["open"]
+
+
+def test_write_scoped_bash_and_deny_rules():
+    c = cfg(write_tools=["Read", "Edit", "Bash(pytest:*)"], deny_rules=["Bash(rm:*)"])
+    p = map_request(req(access="write"), c, CAPS, workdir="/wt/r1").policy
+    assert p.tools == ["Read", "Edit", "Bash(pytest:*)"]
+    assert p.allowed == ["Read(//wt/r1/**)", "Edit(//wt/r1/**)", "Bash(pytest:*)"]
+    assert "Bash(rm:*)" in p.disallowed and PUSH_DENY in p.disallowed
+    assert "Edit" not in p.disallowed
+
+
+def test_write_owner_only_denied():
+    m = map_request(req(("skill:closed", "mcp:gl"), "write"), cfg(), CAPS, workdir="/wt/r1")
+    assert {"Skill(closed)", "mcp__gl"} <= set(m.policy.disallowed)
 
 
 def test_owner_only_not_loaded_and_denied():

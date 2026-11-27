@@ -7,7 +7,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class RunRequest:
     capabilities: tuple[str, ...]  # capability ids; empty for the planner
-    access: str  # "read" (write only after spec 004)
+    access: str  # "read" or "write"
     requester_is_owner: bool
     target: str | None = None
     payload: dict | None = None
@@ -27,13 +27,13 @@ def build_run_request(
 ) -> RunRequest:
     """A step loads only its own capability. `exposed` (when given) must hold it:
     an owner-only or hidden capability never loads."""
-    if step.access != "read":
+    if step.access not in ("read", "write"):
         raise ValueError(f"no run for access {step.access}")
     if exposed is not None and step.capability not in exposed:
         raise ValueError("capability not exposed")
     return RunRequest(
         (step.capability,),
-        "read",
+        step.access,
         bool(owner) and starter == owner,
         getattr(step, "target", None),
         step.payload,

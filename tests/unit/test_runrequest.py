@@ -24,10 +24,14 @@ def test_only_own_capability():
     assert build_run_request(step(cap="x"), "U", "U").capabilities == ("x",)
 
 
-def test_approve_and_write_raise():
-    for a in ("approve", "write"):
-        with pytest.raises(ValueError):
-            build_run_request(step(a), "U", "U")
+def test_approve_raises():
+    with pytest.raises(ValueError):
+        build_run_request(step("approve"), "U", "U")
+
+
+def test_write_keeps_access():
+    req = build_run_request(step("write"), "U", "U")
+    assert req.access == "write" and req.capabilities == ("cap-1",)
 
 
 def test_planner_request():

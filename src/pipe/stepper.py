@@ -8,6 +8,7 @@ from pipe.core.capability import Capability
 from pipe.core.claim import resolve_claim, ts_key
 from pipe.core.context import effective_payload
 from pipe.core.contract import Button, RuntimeFailed, RuntimeInput
+from pipe.core.gate import gate_decision, gate_required, gate_text
 from pipe.core.pipeline import Step, access_fits, matches_tag, validate_plan
 from pipe.core.render import render_step, render_stop
 from pipe.core.route import TASK_EVENT, UNVERIFIED, View, card_view
@@ -18,6 +19,7 @@ from pipe.runtime_select import check_input, check_output
 CLAIM_SETTLE_S = 2
 OWNER_OFFLINE_AFTER_S = 60
 RETRY = [Button("pipe_retry", "Retry")]
+GATE = [Button("pipe_accept", "Accept"), Button("pipe_reject", "Reject")]
 _TAG = "tag:"
 
 
@@ -34,12 +36,15 @@ class Stepper:
         settle_s: float = CLAIM_SETTLE_S,
         step_timeout_min: int = 30,
         dialog_timeout_h: int = 24,
+        allowlist=(),
     ):
         """`load(channel, thread_ts)` gives a fresh `ThreadState`. `caps` are the exposed
-        capabilities of this agent. `timer(seconds, fn)` is an injected factory."""
+        capabilities of this agent. `timer(seconds, fn)` is an injected factory.
+        `allowlist` comes from the config; the owner is the card owner (spec 004)."""
         self.t, self.rt, self.load, self.caps = transport, runtime, load, caps
         self.sleep, self.timer, self.settle_s = sleep, timer, settle_s
         self.step_timeout_min, self.dialog_timeout_h = step_timeout_min, dialog_timeout_h
+        self.allowlist = tuple(allowlist)
         self._seen: set[str] = set()
 
     # --- small helpers
@@ -182,7 +187,59 @@ class Stepper:
         if not self._wins(ts, i, claim_ts):
             self.t.delete_message(ts.channel, claim_ts)
             return "lost"
+        v = View(ts)
+        humans = [m.sender_id for m in ts.messages if not m.sender_is_bot]
+        step = SimpleNamespace(access=v.steps[i]["access"])
+        if gate_required(step, ts.starter, v.owner(ts.self_id), humans):
+            return self._gate(ts, v, i, claim_ts, hop)
         return self._exec(ts, i, claim_ts, hop)
+
+    def _sender(self, v, i) -> str | None:
+        """Sender of the latest trusted handoff to step `i`; None gives the button."""
+        hs = [
+            p["by"]
+            for _, p in v.base
+            if ((p.get("next") or {}).get("payload") or {}).get("step") == i
+        ]
+        return hs[-1] if hs else None
+
+    def _gate(self, ts, v, i, claim_ts, hop) -> str:
+        """Owner gate for a `write` step of another person: run now or ask the owner."""
+        s, n = v.steps[i], len(v.steps)
+        base = self._base(ts, i, hop, s["access"])
+        owner = v.owner(ts.self_id)  # card owner, same source as the click check
+        if not owner:
+            return self._fail(ts, v, i, claim_ts, base, "no owner", buttons=None)
+        sender = self._sender(v, i)
+        card = ts.cards.get(sender) or {}
+        who = gate_decision(sender or "", ts.starter, card.get("owner"), self.allowlist)
+        if who == "auto":
+            return self._exec(ts, i, claim_ts, hop)
+        name = lambda x: self._clean((x or {}).get("name") or "agent")  # noqa: E731
+        me = ts.cards.get(ts.self_id)
+        text = gate_text(i + 1, n, name(me), owner, name(card))
+        self._update(ts, claim_ts, text, {**base, "status": "needs_approval"}, GATE)
+        return "needs_approval"
+
+    def accept_step(self, msg) -> str:
+        """Owner clicked Accept: run the step. Acts only while the gate waits."""
+        ts, v, i = self._pending(msg, "accept")
+        return self._exec(ts, i, msg.ts, v.last(i)[1]["hop"]) if v else "stale"
+
+    def reject_step(self, msg) -> str:
+        """Owner clicked Reject: the step ends `failed`, `rejected`. No retry button."""
+        ts, v, i = self._pending(msg, "reject")
+        if not v:
+            return "stale"
+        base = self._base(ts, i, v.last(i)[1]["hop"], "write")
+        return self._fail(ts, v, i, msg.ts, base, "rejected", buttons=None)
+
+    def _pending(self, msg, kind):
+        ts = self.load(msg.channel, msg.thread)
+        v, i = View(ts), msg.metadata["event_payload"].get("step")
+        if not (isinstance(i, int) and v.owner_gate_pending(i) and v.last(i)[0].ts == msg.ts):
+            return ts, None, i
+        return (ts, v, i) if self._once(f"{kind}:{msg.channel}:{msg.ts}") else (ts, None, i)
 
     def _wins(self, ts, i, claim_ts) -> bool:
         v = View(self.load(ts.channel, ts.thread_ts))
@@ -201,14 +258,15 @@ class Stepper:
     def _results(self, v, i) -> list[dict]:
         """Text and links of the done steps before `i`. Claim messages carry no `artifacts`."""
         out: dict[int, dict] = {}
-        for m, p in v.base:
-            j = p.get("step")
-            if p["phase"] != "step" or p["status"] != "done" or "artifacts" not in p:
-                continue
-            if isinstance(j, int) and j < i and j not in out:
-                lines = m.text.split("\n")
-                text = "\n".join(lines[:-1] if p.get("next") else lines)
-                out[j] = {"step": j, "text": text, "artifacts": list(p["artifacts"])}
+        # Only messages of the agent that the plan assigns to step j.
+        for j, msgs in v.msgs.items():
+            for m, p in msgs:
+                if p["status"] != "done" or "artifacts" not in p or p["by"] != v.agent[j]:
+                    continue
+                if j < i and j not in out:
+                    lines = m.text.split("\n")
+                    text = "\n".join(lines[:-1] if p.get("next") else lines)
+                    out[j] = {"step": j, "text": text, "artifacts": list(p["artifacts"])}
         return [out[j] for j in sorted(out)]
 
     def _fail(self, ts, v, i, claim_ts, base, reason, buttons=RETRY, detail=None):
@@ -440,7 +498,7 @@ class Stepper:
         """Timer fired: no claim yet. Fixed agent: `owner offline`. Tag step: `no_claimer`."""
         ts = self.load(channel or self.t.find_channel("pipe-work"), thread_ts)
         v = View(ts)
-        if any(p["status"] != "failed" for _, p in v.claims[i]):
+        if any(p["status"] != "failed" for _, p in v.claims[i]) or v.rejected(i):
             return
         s, n = v.steps[i], len(v.steps)
         tag = s["agent"] == "any"

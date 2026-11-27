@@ -23,6 +23,7 @@ def test_defaults():
     assert c.model is None
     assert c.step_timeout_min == 30
     assert c.warnings == ()
+    assert c.allowlist == []
 
 
 def test_agent_name_required():
@@ -93,7 +94,7 @@ def test_old_top_level_keys(key):
 
 
 def test_other_runtime_keys_ignored():
-    cfg(runtime={"name": "claude", "claude": {}}, allowlist=["U2"])
+    cfg(runtime={"name": "claude", "claude": {}}, allowlist=["U222"])
 
 
 @pytest.mark.parametrize("m", ["opus", "claude-opus-4.5", "sonnet[1m]"])
@@ -309,3 +310,70 @@ def test_exposed_exec_needs_input_schema():
     cfg(capabilities=[EXEC], exposed=[])
     cfg(capabilities=[HTTP], exposed=["http:deploys"])
     cfg(exposed=["exec:nope"])
+
+
+def rc(**kw):
+    return cfg(runtime={"claude": kw})
+
+
+def test_delegation_defaults():
+    c = cfg()
+    assert c.write_tools == ["Read", "Grep", "Glob", "Edit", "Write"]
+    assert c.delegate_repos == {}
+    assert c.base_branch == "main"
+    assert c.worktree_root == str(Path("~/.pipe/worktrees").expanduser())
+
+
+@pytest.mark.parametrize("t", ["Bash", "Bash(*)", "Bash(:*)", "Bash()", ""])
+def test_write_tools_refused(t):
+    with pytest.raises(ConfigError, match="write_tools"):
+        rc(write_tools=["Read", t])
+
+
+def test_write_tools_scoped_bash_refused():
+    with pytest.raises(ConfigError, match="Bash rules are not allowed"):
+        rc(write_tools=["Edit", "Bash(pytest:*)"])
+
+
+def test_delegate_repos_ok_and_expanded():
+    c = rc(repo_roots=["~/code"], delegate_repos={"web": "~/code/web"})
+    assert c.delegate_repos == {"web": str(Path("~/code/web").expanduser())}
+
+
+@pytest.mark.parametrize(
+    "v",
+    ["/r/x", ["/r/x"], {"": "/r/x"}, {"a b": "/r/x"}, {"a": "rel/x"}, {"a": 1}, {"a": "/other/x"}],
+)
+def test_delegate_repos_errors(v):
+    with pytest.raises(ConfigError, match="delegate_repos"):
+        rc(repo_roots=["/r"], delegate_repos=v)
+
+
+@pytest.mark.parametrize("b", ["", "a b", "a..b", "-x", 1])
+def test_base_branch_errors(b):
+    with pytest.raises(ConfigError, match="base_branch"):
+        rc(base_branch=b)
+
+
+def test_base_branch_and_root_ok():
+    c = rc(base_branch="release/1.x", worktree_root="/srv/wt")
+    assert (c.base_branch, c.worktree_root) == ("release/1.x", "/srv/wt")
+
+
+def test_worktree_root_relative_refused():
+    with pytest.raises(ConfigError, match="worktree_root"):
+        rc(worktree_root="rel/wt")
+
+
+def test_allowlist():
+    assert cfg(allowlist=["UABC", "B123"]).allowlist == ["UABC", "B123"]
+    for bad in ("UABC", ["secret-x"], [5], ["U1"]):
+        with pytest.raises(ConfigError, match="allowlist") as e:
+            cfg(allowlist=bad)
+        assert "secret-x" not in str(e.value)
+
+
+def test_write_tools_refuse_any_bash_rule():
+    for rule in ["Bash(make:*)", "Bash(python:*)", "Bash"]:
+        with pytest.raises(ConfigError, match="Bash rules are not allowed"):
+            rc(write_tools=["Read", rule])

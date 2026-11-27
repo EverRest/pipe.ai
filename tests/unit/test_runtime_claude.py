@@ -171,3 +171,35 @@ def test_build_cmd_empty_prepared_adds_nothing():
 
     pol = tools_for(True, ["Read"], [])
     assert build_cmd(CFG, pol, PreparedLoad(None, None, [], [])) == build_cmd(CFG, pol)
+
+
+def _req(access):
+    from pipe.core.runrequest import RunRequest
+
+    return RunRequest(("c",), access, True)
+
+
+def _rt_write(monkeypatch, req):
+    calls = []
+
+    def fake_write(inp, cfg, git, runner, caps, *a):
+        calls.append((git, runner))
+        return "W"
+
+    monkeypatch.setattr("pipe.runtime_claude.run_write", fake_write)
+    fake, git = Fake(), object()
+    inp = RuntimeInput(**INP, requester_is_owner=True, request=req)
+    return rt(fake, git=git), inp, calls, fake, git
+
+
+def test_write_run_calls_run_write(monkeypatch):
+    r, inp, calls, fake, git = _rt_write(monkeypatch, _req("write"))
+    assert r.run(inp) == "W"
+    assert calls == [(git, fake)]
+    assert fake.calls == []
+
+
+def test_read_run_skips_run_write(monkeypatch):
+    r, inp, calls, fake, _ = _rt_write(monkeypatch, None)
+    assert r.run(inp).text == "hello"
+    assert calls == [] and fake.calls

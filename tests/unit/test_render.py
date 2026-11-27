@@ -52,3 +52,7 @@ def test_plan_text_names_agents_and_cleans_goal():
     t = render_plan(steps, {"B1": "agent-a"}, Fmt.escape_mentions)
     assert t.splitlines()[1:3] == ["1. agent-a (read): look &lt;@U1>", "2. human:U9 (approve): ok?"]
     assert t.endswith("React with :white_check_mark: to start.")
+
+
+def test_write_step():
+    assert render_step(0, 2, "write", "a", "running") == "Step 1 of 2 (write, a): running"

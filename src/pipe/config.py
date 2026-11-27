@@ -1,5 +1,6 @@
 """Load and validate ~/.pipe/config.yaml (data-model.md "Agent (config)")."""
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,6 +40,13 @@ class Config:
     description: str = ""
     agents_channel: str = "pipe-agents"
     capabilities: list[dict] = field(default_factory=list)  # validated declared entries
+    write_tools: list[str] = field(
+        default_factory=lambda: ["Read", "Grep", "Glob", "Edit", "Write"]
+    )
+    delegate_repos: dict[str, str] = field(default_factory=dict)  # name -> absolute path
+    worktree_root: str = str(Path("~/.pipe/worktrees").expanduser())
+    base_branch: str = "main"
+    allowlist: list[str] = field(default_factory=list)  # Slack IDs
 
 
 def _strs(val, key: str) -> list[str]:
@@ -55,6 +63,52 @@ def _has_token(v) -> bool:
     return isinstance(v, list) and any(_has_token(x) for x in v)
 
 
+_REPO_NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
+_BRANCH = re.compile(r"[A-Za-z0-9_./][A-Za-z0-9._/-]{0,127}")
+
+
+def _delegation(rt: dict, roots: list[str]) -> dict:
+    """Validate the 004 keys. Errors never quote a name or a path."""
+    tools = _strs(
+        rt.get("write_tools", Config.__dataclass_fields__["write_tools"].default_factory()),
+        "runtime.claude.write_tools",
+    )
+    if any(r.startswith("Bash") for r in tools):
+        raise ConfigError("write_tools: Bash rules are not allowed on write steps")
+    repos = rt.get("delegate_repos", {})
+    if not isinstance(repos, dict):
+        raise ConfigError("runtime.claude.delegate_repos must be a map of name to path")
+    real_roots = [os.path.realpath(r) for r in roots]
+    out = {}
+    for n, p in repos.items():
+        if not (isinstance(n, str) and _REPO_NAME.fullmatch(n)):
+            raise ConfigError("delegate_repos: a name must match [A-Za-z0-9._-]{1,64}")
+        if not (isinstance(p, str) and Path(p).expanduser().is_absolute()):
+            raise ConfigError("delegate_repos: each path must be absolute")
+        real = os.path.realpath(Path(p).expanduser())
+        if not any(real.startswith(r + os.sep) for r in real_roots):
+            raise ConfigError("delegate_repos: each path must be inside repo_roots")
+        out[n] = str(Path(p).expanduser())
+    base = rt.get("base_branch", "main")
+    if not (
+        isinstance(base, str)
+        and _BRANCH.fullmatch(base)
+        and ".." not in base
+        and not base.endswith((".lock", "/", "."))
+    ):
+        raise ConfigError("base_branch must be a plain branch name")
+    wt = rt.get("worktree_root", "~/.pipe/worktrees")
+    if not (isinstance(wt, str) and Path(wt).expanduser().is_absolute()):
+        raise ConfigError("worktree_root must be an absolute path")
+    return dict(
+        write_tools=tools,
+        delegate_repos=out,
+        base_branch=base,
+        worktree_root=str(Path(wt).expanduser()),
+    )
+
+
+_SLACK_ID = r"[BUWA][A-Z0-9]{2,}"
 _ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 _COMMON = {"id", "runtime", "name", "description", "access", "tags", "timeout_s"}
 _COMMON |= {"input_schema", "output_schema"}
@@ -174,6 +228,7 @@ def validate_config(raw: dict) -> Config:
     )
     if not roots or not all(Path(r).expanduser().is_absolute() for r in roots):
         raise ConfigError("runtime.claude.repo_roots must be a non-empty list of absolute paths")
+    kw |= _delegation(rt, [str(Path(r).expanduser()) for r in roots])
     deny = _strs(rt.get("deny_rules", []), "runtime.claude.deny_rules")
     budget = raw.get("max_budget_usd")
     if budget is not None and (
@@ -201,6 +256,12 @@ def validate_config(raw: dict) -> Config:
     agents = raw.get("agents_channel", "pipe-agents")
     if not isinstance(agents, str) or not agents:
         raise ConfigError("agents_channel must be a non-empty string")
+    allow = raw.get("allowlist", [])
+    if not (
+        isinstance(allow, list)
+        and all(isinstance(x, str) and re.fullmatch(_SLACK_ID, x) for x in allow)
+    ):
+        raise ConfigError("allowlist must be a list of Slack IDs")
     caps = _caps(raw.get("capabilities", []), exposed)
     warnings = () if owner else ("owner is empty: no sender gets tools",)
     return Config(
@@ -219,6 +280,7 @@ def validate_config(raw: dict) -> Config:
         description=desc,
         agents_channel=agents,
         capabilities=caps,
+        allowlist=allow,
         **kw,
     )
 

@@ -70,7 +70,8 @@ class Adapter:
         `caps`: exposed capabilities by id (default: found at start). `stepper_kw`: timer etc."""
         self.cfg, self.t, self.rt = cfg, transport, runtime
         self.flows, self.expand, self.caps = flows or {}, expand, dict(caps or {})
-        self.stepper = Stepper(transport, runtime, self._state, self.caps, **(stepper_kw or {}))
+        kw = {"allowlist": getattr(cfg, "allowlist", ()), **(stepper_kw or {})}
+        self.stepper = Stepper(transport, runtime, self._state, self.caps, **kw)
         self.cards: CardCache | None = None
         self.threads: dict[tuple, str] = {}  # (channel, ts) -> thread ts; ponytail: grows per run
         self.handle = ""
@@ -151,6 +152,8 @@ class Adapter:
             keys.add(f"plan:{channel}:{e.ts if hasattr(e, 'ts') else e.thread_ts}")
         if d.action == "claim":
             keys.add(f"step:{channel}:{d.arg[0].thread_ts}:{d.arg[1]}")
+        if d.action in ("accept", "reject"):
+            keys.add(f"{d.action}:{channel}:{d.arg.ts}")
         return keys
 
     def _decide(self, e):
@@ -175,6 +178,8 @@ class Adapter:
             if old := self._accept(e, self.handle) or self._accept(e, self.agent_id):
                 return self._process, e, old.action
             return None
+        if d.reason == "not_owner":
+            log.info("gate click ignored: not the owner")
         keys = self._keys(e, d, e.channel)
         if d.action == "ignore" or keys & self.in_flight:
             return None
@@ -191,12 +196,13 @@ class Adapter:
     def _run(self, e, d, keys, where) -> None:
         """Run one decision. An error is logged: one thread never stops the adapter."""
         try:
-            self._act(e, d, where)
+            res = self._act(e, d, where)
             if eid := getattr(e, "event_id", None):
                 self.event_ids = remember(self.event_ids, eid)
             if isinstance(e, MentionEvent | BotMessage):
                 self.keys = remember(self.keys, f"{e.channel}:{e.ts}")
-                state.save_state(last_seen_ts=e.ts)
+                if res != "needs_approval":  # a waiting gate keeps the handoff unseen
+                    state.save_state(last_seen_ts=e.ts)
             state.save_seen(self.event_ids, self.keys)
         except Exception:
             log.exception("%s failed", d.action)
@@ -210,13 +216,17 @@ class Adapter:
         elif a == "start":
             st.start_pipeline(self._state(d.arg.channel, d.arg.thread), d.arg)
         elif a == "claim":
-            st.run_step(*d.arg)
+            return st.run_step(*d.arg)
         elif a == "refuse":
             st.refuse(e, d.reason)
         elif a == "approve":
             st.approve_step(d.arg)
         elif a == "release":
             st.release_step(d.arg)
+        elif a == "accept":
+            st.accept_step(d.arg)
+        elif a == "reject":
+            st.reject_step(d.arg)
         elif a == "retry":
             st.retry_step(*d.arg)
         elif a == "resume":

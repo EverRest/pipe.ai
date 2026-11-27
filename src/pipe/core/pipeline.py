@@ -83,9 +83,7 @@ def _step_errors(i, s, n, cards, starter, prev):
         err(f"goal is too long or has a secret (limit {MAX_GOAL_CHARS})")
     if not isinstance(agent, str) or not agent:
         return e + [f"step {i + 1}: agent is missing"]
-    if access == "write":
-        err("not supported before spec 004")
-    elif access not in ("read", "approve"):
+    if access not in ("read", "write", "approve"):
         err(f"bad access {access!r}")
     human = agent.startswith("human:")
     if human:

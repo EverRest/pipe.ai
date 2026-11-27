@@ -1,0 +1,17 @@
+name: planning
+version: 1
+description: "Turn an idea into a spec and a task proposal."
+steps:
+  - id: brainstorm
+    agent: any
+    capability: "tag:brainstorm"
+    goal: "Discuss this idea with the people in the thread. Ask questions when you need input: {goal}"
+  - id: spec
+    agent: any
+    capability: "tag:spec"
+    goal: "Write a spec from the discussion. Open an MR or make a document: {goal}"
+  - id: decompose
+    agent: any
+    capability: "tag:decompose"
+    goal: "Break the spec into tasks and propose them."
+    gate: approval

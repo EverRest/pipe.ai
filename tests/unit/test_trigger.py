@@ -43,12 +43,12 @@ def test_form_b():
     assert (t.flow, t.pipeline, t.title) == ("nightly", None, "run it")
 
 
-def test_both_neither_empty_goal():
+def test_both_neither_empty_goal_is_allowed():
     assert parse_trigger(msg(pay()), CARDS, "nightly") is None
     assert parse_trigger(msg(pay(pipeline=None)), CARDS, None) is None
-    assert (
-        parse_trigger(msg(pay(pipeline=None), text="<@UA> flow:nightly "), CARDS, "nightly") is None
-    )
+    # an empty goal is allowed for a flow (spec 006: a schedule posts `flow:nightly` alone)
+    t = parse_trigger(msg(pay(pipeline=None), text="<@UA> flow:nightly "), CARDS, "nightly")
+    assert (t.flow, t.title) == ("nightly", "")
 
 
 def test_refused():

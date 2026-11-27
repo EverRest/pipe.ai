@@ -1,0 +1,12 @@
+name: research
+version: 1
+description: "Research a question in the web, docs, and code. Keep a document."
+steps:
+  - id: research
+    agent: any
+    capability: "tag:research"
+    goal: "Research this question: {goal}"
+  - id: summary
+    agent: any
+    capability: "tag:summarize"
+    goal: "Write a document with the findings and the source links."

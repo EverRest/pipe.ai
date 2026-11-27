@@ -1,0 +1,13 @@
+name: test-run
+version: 1
+description: "Run the end-to-end tests. On failure, troubleshoot."
+steps:
+  - id: e2e
+    agent: any
+    capability: "tag:e2e"
+    goal: "Run the end-to-end tests: {goal}. Attach the report and screenshots."
+    on_fail: troubleshoot
+  - id: troubleshoot
+    agent: any
+    capability: "tag:troubleshoot"
+    goal: "Find the cause of the test failure and say what to do."

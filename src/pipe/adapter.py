@@ -24,6 +24,8 @@ from pipe.core.contract import (
 )
 from pipe.core.dedupe import remember
 from pipe.core.exposure import render_list, state_of
+from pipe.core.flows import expand as expand_flow
+from pipe.core.flows import missing_tags, parse_flow_mention
 from pipe.core.pipeline import validate_plan
 from pipe.core.render import render_plan, render_trigger
 from pipe.core.route import (
@@ -39,6 +41,7 @@ from pipe.core.router import is_owner, should_handle
 from pipe.core.status import parse_status_messages, recent, render_summary
 from pipe.core.summary import build_summary
 from pipe.core.trigger import decide_trigger
+from pipe.flows_io import load_default
 from pipe.owner_summary import send_summary
 from pipe.planner import PlanResult, plan
 from pipe.stepper import GATE, Stepper
@@ -250,9 +253,16 @@ class Adapter:
     def _plan(self, d, ts: ThreadState) -> None:
         cards = card_view(ts.cards)
         if d.action == "plan_flow":
-            res = self._flow_plan(d.arg, cards, ts.starter)
+            m = parse_flow_mention(ts.parent_text, ts.agent_users)
+            res = self._flow_plan(d.arg, cards, ts.starter, m)
+            if res.errors == ["unknown flow"]:
+                known = ", ".join(sorted(self.flows)) or "none"
+                res = PlanResult(errors=[f"flow {d.arg} not found. Known flows: {known}"])
         else:
-            res = plan(ts.parent_text, cards, self.flows, self.rt, ts.starter, self.expand)
+            res = plan(
+                ts.parent_text, cards, self.flows, self.rt, ts.starter,
+                self._expander(ts.parent_text, cards, ts.starter),
+            )  # fmt: skip
         if res.errors:
             text = self._safe("I could not build a plan: " + "; ".join(res.errors)[:300])
             self.t.post_message(ts.channel, text, thread=ts.thread_ts)
@@ -271,7 +281,8 @@ class Adapter:
         """Plan a trigger (no runtime call). Gate: allowlist starts it, else the owner decides."""
         cards, me = card_view(ts.cards), ts.cards.get(ts.self_id) or {}
         if t.flow:
-            res = self._flow_plan(t.flow, cards, t.sender)
+            m = parse_flow_mention(f"flow:{t.flow} {t.title}", {})
+            res = self._flow_plan(t.flow, cards, t.sender, m)
             errs = (
                 ["could not build a plan (unknown flow)"]
                 if res.errors == ["unknown flow"]
@@ -312,10 +323,42 @@ class Adapter:
         ask = render_trigger(who, "needs approval", owner=self.t.mention(owner), escape=self.esc)
         post(self._safe(render_plan(steps, names, footer="")).rstrip() + "\n" + ask, p, GATE)
 
-    def _flow_plan(self, name, cards, starter) -> PlanResult:
-        t = self.expand(name) if self.expand and name in self.flows else None
-        if not t:
+    def _expander(self, goal, cards, starter) -> Callable:
+        """The planner gets `expand(name)`. The goal and the cards stay in the core call."""
+        if self.expand:
+            return self.expand
+
+        def run(name):
+            try:
+                return expand_flow(self.flows[name], goal, None, starter, None, cards)
+            except ValueError:
+                return None
+
+        return run
+
+    def _flow_plan(self, name, cards, starter, m=None) -> PlanResult:
+        flow = self.flows.get(name)
+        if flow is None:
             return PlanResult(errors=["unknown flow"])
+        if self.expand:  # injected expansion (tests, spec 005)
+            t = self.expand(name)
+            if not t:
+                return PlanResult(errors=["unknown flow"])
+        else:
+            agents = m.agents if m else []
+            takes = any(x["kind"] == "agent" for x in flow.steps)
+            if takes and len(agents) < 2:
+                return PlanResult(errors=[f"flow {name} needs a second agent mention"])
+            if not takes and len(agents) > 1:
+                return PlanResult(errors=[f"flow {name} takes no agent mention"])
+            agent = agents[1] if takes else None
+            params = m.params if m else {}
+            try:  # bad parameters first, then the tags
+                t = expand_flow(flow, m.goal if m else "", params, starter, agent, cards)
+            except ValueError as e:
+                return PlanResult(errors=[str(e)])
+            if miss := missing_tags(flow, cards, params, agent):
+                return PlanResult(errors=[f"flow {name}: missing tags: {', '.join(miss)}"])
         raw = {"steps": t["steps"], "source": t["source"]}
         errs = validate_plan(raw, cards, starter, self.flows)
         return PlanResult(errors=errs) if errs else PlanResult(list(t["steps"]), name, t["source"])
@@ -463,7 +506,7 @@ def build(cfg: Config, transport, runtime, scrub_fn, escape_fn, **kw) -> Adapter
 def run_forever(cfg: Config, transport, runtime, scrub_fn, escape_fn, connect: Callable) -> None:
     """I/O only: catch up, then connect Socket Mode and block. Not unit-tested."""
     _setup_log()
-    a = build(cfg, transport, runtime, scrub_fn, escape_fn)
+    a = build(cfg, transport, runtime, scrub_fn, escape_fn, flows=load_default())
     a.start()  # handlers + first catch-up, before events flow
     a.submit = ThreadPoolExecutor(max_workers=1).submit  # one worker: replies never overlap
     connect()  # each connect fires on_reconnect, so a gap is caught up

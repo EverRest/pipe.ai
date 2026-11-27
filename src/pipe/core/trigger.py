@@ -66,7 +66,7 @@ def parse_trigger(msg, cards, flow: str | None) -> Trigger | None:
         if pipe is None or flow is not None:
             return None
         return Trigger(msg.ts, msg.sender_id, pipe, None, title)
-    if flow is None or not title:
+    if flow is None:  # an empty goal is allowed for a flow (006)
         return None
     return Trigger(msg.ts, msg.sender_id, None, flow, title)
 

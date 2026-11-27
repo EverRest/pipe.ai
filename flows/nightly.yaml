@@ -1,0 +1,17 @@
+name: nightly
+version: 1
+description: "Run a regular check from a schedule. On failure, troubleshoot."
+params:
+  check:
+    values: [e2e, deps-check]
+    default: e2e
+steps:
+  - id: check
+    agent: any
+    capability: "tag:$check"
+    goal: "Run the check {check} and write a report: {goal}"
+    on_fail: troubleshoot
+  - id: troubleshoot
+    agent: any
+    capability: "tag:troubleshoot"
+    goal: "Find the cause of the failed check and say what to do."

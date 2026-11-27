@@ -47,8 +47,8 @@ def test_flows_without_handler(capsys, tmp_path, monkeypatch):
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     monkeypatch.chdir(cwd)
-    assert main(["flows"]) == 1
-    assert "flows: not installed" in capsys.readouterr().out
+    assert main(["flows"]) == 0
+    assert "feature-dev" in capsys.readouterr().out
     assert list(cwd.iterdir()) == []
 
 

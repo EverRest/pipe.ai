@@ -157,6 +157,11 @@ def _exclusion_errors(steps, cards):
         if not isinstance(ex, (list, tuple)) or not all(_is_int(j) and 0 <= j < i for j in ex):
             continue
         held = {steps[j]["agent"] for j in ex if steps[j].get("agent") != "any"}
+        for j in ex:  # a tag step with one possible agent holds that agent for certain
+            m = _TAG.fullmatch(steps[j].get("capability") or "")
+            if steps[j].get("agent") == "any" and m:
+                one = {b for b, c in cards.items() if matches_tag(c, m[1], steps[j].get("access"))}
+                held |= one if len(one) == 1 else set()
         if s["agent"] != "any" and s["agent"] in held:
             m = 1 + next(j for j in ex if steps[j]["agent"] == s["agent"])
             e.append(f"step {i + 1}: agent {s['agent']} holds excluded step {m}")

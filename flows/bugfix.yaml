@@ -1,0 +1,25 @@
+name: bugfix
+version: 1
+description: "Fix a bug. A failing test comes first."
+steps:
+  - id: reproduce
+    agent: any
+    capability: "tag:reproduce"
+    goal: "Write a failing test that shows this bug: {goal}"
+  - id: implement
+    agent: any
+    capability: "tag:implement"
+    goal: "Fix the bug so that the failing test passes. Open an MR: {goal}"
+  - id: e2e
+    agent: any
+    capability: "tag:e2e"
+    goal: "Run the end-to-end tests on the branch. Attach the report."
+  - id: review
+    agent: any
+    capability: "tag:review"
+    goal: "Review the MR."
+    exclude_agents_of: [implement]
+  - id: approve
+    agent: "$starter"
+    access: approve
+    goal: "Approve the result."

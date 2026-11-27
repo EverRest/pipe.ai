@@ -3,6 +3,7 @@
 import argparse
 import contextlib
 import sys
+from pathlib import Path
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -100,7 +101,68 @@ def _run_metrics(argv: list[str]) -> int:
     return metrics_cli.main(_metrics_args(cfg, argv), reader, gitlab)
 
 
-def main(argv=None, flows_handler=None, run_handler=_run_adapter, metrics_handler=_run_metrics):
+def _default_load():
+    """Return (flows, errors) from the flow files. Import is deferred (spec 006 modules)."""
+    from pipe import flows_io
+
+    shared = Path(__file__).resolve().parents[2] / "flows"
+    vocab = flows_io.load_tags(shared / "tags.yaml")
+    errors: list[str] = []
+    flows = flows_io.load_flows(shared, Path("~/.pipe/flows").expanduser(), vocab, errors=errors)
+    return flows, errors
+
+
+def _step(st, key):
+    """Read a step field from a dict step (the core form) or an object step."""
+    return st.get(key) if isinstance(st, dict) else getattr(st, key, None)
+
+
+def make_flows_handler(load):
+    """Build `flows_handler(action, name) -> int`.
+
+    `load()` returns `({name: Flow}, [error str])`.
+    """
+
+    def handler(action, name):
+        flows, errors = load()
+        bad = [e for e in errors if not name or e.startswith(name)]
+        if name and name not in flows and not bad or action == "show" and name not in flows:
+            print("unknown flow")
+            return 1
+        if action == "show":
+            f = flows[name]
+            print(f"{f.name}: {f.description}")
+            for i, st in enumerate(f.steps):
+                cap = _step(st, "capability") or "human"
+                print(f"{i} {_step(st, 'id')} {cap} {_step(st, 'access')} {_step(st, 'goal')}")
+            return 0
+        if action == "validate":
+            for n in sorted(flows):
+                if not name or n == name:
+                    print(f"ok {n}")
+            for e in bad:
+                print(e)
+            return 1 if bad else 0
+        for n in sorted(flows):  # list
+            f = flows[n]
+            agents = sum(_step(st, "capability") is not None for st in f.steps)
+            print(f"{n}  {f.description}  {agents}")
+        return 1 if errors else 0
+
+    return handler
+
+
+def flows_handler(action, name):
+    try:
+        return make_flows_handler(_default_load)(action, name)
+    except ImportError:
+        print("flows: not installed")
+        return 1
+
+
+def main(
+    argv=None, flows_handler=flows_handler, run_handler=_run_adapter, metrics_handler=_run_metrics
+):
     """Run the CLI. `flows_handler(action, name) -> int` is injected by spec 006.
 
     `run_handler() -> int` starts the adapter; tests inject a fake.
@@ -115,9 +177,6 @@ def main(argv=None, flows_handler=None, run_handler=_run_adapter, metrics_handle
             p.error("flows show needs a name")
         if a.action is None and a.name:
             p.error("unexpected argument")
-        if flows_handler is None:
-            print("flows: not installed")
-            return 1
         return flows_handler(a.action or "list", a.name)
     if a.cmd == "status-hook":
         from pipe import hook

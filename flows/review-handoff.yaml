@@ -1,0 +1,21 @@
+name: review-handoff
+version: 1
+description: "Review a change, fix the comments, review again."
+steps:
+  - id: review
+    agent: any
+    capability: "tag:review"
+    goal: "Review this change: {goal}"
+  - id: implement
+    agent: any
+    capability: "tag:implement"
+    goal: "Fix the review comments. Update the MR."
+  - id: re-review
+    agent: any
+    capability: "tag:review"
+    goal: "Review the fixes."
+    exclude_agents_of: [implement]
+  - id: approve
+    agent: "$starter"
+    access: approve
+    goal: "Approve the result."

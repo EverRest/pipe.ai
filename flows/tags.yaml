@@ -1,0 +1,44 @@
+version: 1
+tags:
+  decompose:
+    access: read
+    meaning: "Break a request into tasks. Return a task proposal."
+  implement:
+    access: write
+    meaning: "Change code in a separate worktree. The result is an MR."
+  e2e:
+    access: read
+    meaning: "Run end-to-end tests on a branch or an environment. Return a report and screenshots."
+  review:
+    access: read
+    meaning: "Review a change (an MR). Return drafts or comments."
+  reproduce:
+    access: read
+    meaning: "Make a failing test that shows a bug."
+  brainstorm:
+    access: read
+    meaning: "Discuss an idea with the people in the thread (a dialog)."
+  context:
+    access: read
+    meaning: "Collect context from repos, docs, and MRs."
+  research:
+    access: read
+    meaning: "Search the web, docs, and code for an answer."
+  summarize:
+    access: read
+    meaning: "Make a summary or a document from earlier results."
+  spec:
+    access: write
+    meaning: "Write a spec document or an MR with a spec."
+  collect:
+    access: read
+    meaning: "Collect logs, metrics, or cluster state."
+  diagnose:
+    access: read
+    meaning: "Find the cause of a fault from collected data."
+  troubleshoot:
+    access: read
+    meaning: "Check a failed result and say what to do."
+  deps-check:
+    access: read
+    meaning: "Check dependencies for outdated or unsafe versions."

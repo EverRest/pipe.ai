@@ -1,0 +1,20 @@
+name: troubleshoot
+version: 1
+description: "Find the cause of a fault and propose a fix."
+steps:
+  - id: collect
+    agent: any
+    capability: "tag:collect"
+    goal: "Collect logs, metrics, and cluster state for this fault: {goal}"
+  - id: diagnose
+    agent: any
+    capability: "tag:diagnose"
+    goal: "Find the cause of the fault from the collected data."
+  - id: implement
+    agent: any
+    capability: "tag:implement"
+    goal: "Fix the cause in a branch and open an MR."
+  - id: approve
+    agent: "$starter"
+    access: approve
+    goal: "Approve the fix."

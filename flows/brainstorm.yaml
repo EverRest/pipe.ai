@@ -1,0 +1,16 @@
+name: brainstorm
+version: 1
+description: "Discuss a topic with context from repos, docs, and MRs. Keep a summary."
+steps:
+  - id: context
+    agent: any
+    capability: "tag:context"
+    goal: "Collect context for this topic: {goal}"
+  - id: brainstorm
+    agent: any
+    capability: "tag:brainstorm"
+    goal: "Discuss this topic with the people in the thread: {goal}"
+  - id: summary
+    agent: any
+    capability: "tag:summarize"
+    goal: "Write a summary of the discussion as a document."

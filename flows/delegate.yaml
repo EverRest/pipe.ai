@@ -1,0 +1,8 @@
+name: delegate
+version: 1
+description: "Ask the agent of another owner to change a repo of that owner."
+steps:
+  - id: implement
+    agent: "$agent"
+    capability: "tag:implement"
+    goal: "Make this change in your repo and open an MR: {goal}"

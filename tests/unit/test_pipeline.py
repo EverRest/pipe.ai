@@ -157,7 +157,9 @@ def test_exclude():
         "step 2: no agent can claim after exclusion",
     )
     assert v([bot("B1"), tag("x", exclude_agents_of=[0])]) == []  # B2 can claim
-    assert v([tag("x"), tag("x", exclude_agents_of=[0])]) == []  # holder unknown
+    # only B2 offers x, so it holds step 1 for certain (spec 006)
+    has(v([tag("x"), tag("x", exclude_agents_of=[0])]), "no agent can claim after exclusion")
+    assert v([tag("review"), tag("x", exclude_agents_of=[0])]) == []  # holder unknown
     assert (
         v(
             [

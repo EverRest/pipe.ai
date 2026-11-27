@@ -83,3 +83,9 @@ def test_schedule(monkeypatch):
     assert main(["schedule", "--remove"]) == 0
     assert seen == ["i", "r"]
     assert main(["schedule"]) == 1
+
+
+def test_metrics_passes_its_args_to_the_handler():
+    seen = []
+    code = main(["metrics", "--weeks", "2"], metrics_handler=lambda a: seen.append(a) or 3)
+    assert (code, seen) == (3, [["--weeks", "2"]])

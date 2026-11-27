@@ -21,3 +21,11 @@ def read_token(service: str, account: str, run: Callable = _run) -> str:
     if r.returncode != 0:
         raise KeychainError(f"keychain item not found: service={service} account={account}")
     return r.stdout.strip()
+
+
+def read_capability_token(service: str, run: Callable = _run) -> str:
+    """Token of a declared `http` capability: Keychain item (service, account `token`)."""
+    r = run(["security", "find-generic-password", "-s", service, "-a", "token", "-w"])
+    if r.returncode != 0:
+        raise KeychainError(f"keychain item not found: service={service}")
+    return r.stdout.strip()

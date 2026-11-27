@@ -31,3 +31,19 @@ def test_failure_hides_token():
     with pytest.raises(KeychainError) as e:
         read_token("svc", "app", run=runner(out="xapp-secret", code=44))
     assert "xapp-secret" not in str(e.value)
+
+
+def test_capability_token_account_and_hidden():
+    from pipe.keychain import read_capability_token
+
+    r = runner()
+    assert read_capability_token("svc", run=r) == "xoxb-secret"
+    assert r.calls == [["security", "find-generic-password", "-s", "svc", "-a", "token", "-w"]]
+    with pytest.raises(KeychainError) as e:
+        read_capability_token("svc", run=runner(out="tok-secret", code=44))
+    assert "tok-secret" not in str(e.value)
+
+
+def test_read_token_rejects_token_account():
+    with pytest.raises(ValueError):
+        read_token("svc", "token", run=runner())

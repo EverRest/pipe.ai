@@ -16,6 +16,7 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--remove", action="store_true")
     h = sub.add_parser("status-hook")
     h.add_argument("event", choices=["SessionStart", "Stop", "SessionEnd"])
+    sub.add_parser("metrics", add_help=False)  # its own args go to metrics_cli
     f = sub.add_parser("flows")
     f.add_argument("action", nargs="?", choices=["show", "validate"])
     f.add_argument("name", nargs="?")
@@ -43,11 +44,41 @@ def _run_adapter() -> int:
     return 0
 
 
-def main(argv=None, flows_handler=None, run_handler=_run_adapter) -> int:
+def _run_metrics(argv: list[str]) -> int:
+    """Composition root for `pipe metrics`: Slack reader plus the optional GitLab MR state."""
+    import yaml
+    from slack_sdk import WebClient
+
+    from pipe import gitlab_io, metrics_cli
+    from pipe.config import load_config
+    from pipe.core.scrub import scrub
+    from pipe.keychain import read_token
+    from pipe.state import pipe_home
+    from pipe.transport_slack import SlackTransport
+
+    cfg = load_config()
+    reader = SlackTransport(
+        WebClient(token=read_token(cfg.slack_tokens.removeprefix("keychain:"), "bot")), scrub=scrub
+    )
+    # `mr_state.gitlab` is read here until the config module validates it (T006).
+    gl = (yaml.safe_load((pipe_home() / "config.yaml").read_text()).get("mr_state") or {}).get(
+        "gitlab"
+    ) or {}
+    gitlab = None
+    if gl.get("url") and str(gl.get("token", "")).startswith("keychain:"):
+        token = gitlab_io.load_token(gl["token"].removeprefix("keychain:"))
+        gitlab = gitlab_io.make_mr_state(gl["url"], token)
+    return metrics_cli.main(argv, reader, gitlab)
+
+
+def main(argv=None, flows_handler=None, run_handler=_run_adapter, metrics_handler=_run_metrics):
     """Run the CLI. `flows_handler(action, name) -> int` is injected by spec 006.
 
     `run_handler() -> int` starts the adapter; tests inject a fake.
     """
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["metrics"]:
+        return metrics_handler(argv[1:])
     p = _parser()
     a = p.parse_args(argv)
     if a.cmd == "flows":

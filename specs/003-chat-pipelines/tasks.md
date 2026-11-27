@@ -187,7 +187,7 @@ Single project: `src/pipe/`, `tests/unit/`, `tests/integration/`, `tests/fakes.p
   - The `next.access` is `write` or `approve`: `ignore(unsupported_access)`.
   - This agent already has a claim for the step after the handoff, or the step key is in flight: `ignore(already_claimed)`.
   - A task message with no `next`: `ignore`.
-- [ ] T028 [P] [US3] Write failing test for `next_hop` and the hop rule in `tests/unit/test_hop_rule.py` (FR-009, FR-010, research.md D6):
+- [ ] T028 [P] [US3] Write failing test for `next_hop` and the hop rule in `tests/unit/test_hop_rule.py` (FR-009, FR-010, research.md D6): — closed: covered by route and stepper tests (see the tests)
   - `next_hop(h)` is `h + 1`. The approval request keeps the `hop` of its claim.
   - Free plan: a chain A to B (hop 1), B to A (hop 2), A to B (hop 3) is accepted. The next handoff (hop 4) is refused. (A verified template has the limit 5: T092.)
   - In every accepted chain, the number of back-and-forth handoffs (a handoff to the agent that handed over the step before) is at most 2 (FR-010).
@@ -225,7 +225,7 @@ Single project: `src/pipe/`, `tests/unit/`, `tests/integration/`, `tests/fakes.p
   - The planner request is `RunRequest((), "read", False)`, also when the thread starter is the owner (confirmed decision). The test checks the helper `planner_request()`.
   - The result has no field with a tool name, a path, or a flag.
   - The function does not change its input.
-- [ ] T033 [P] [US2] Write failing test for `step_status` and `thread_status` in `tests/unit/test_thread_status.py` (FR-011, FR-012, FR-013, data-model.md "Status of a step and of a thread"):
+- [ ] T033 [P] [US2] Write failing test for `step_status` and `thread_status` in `tests/unit/test_thread_status.py` (FR-011, FR-012, FR-013, data-model.md "Status of a step and of a thread"): — closed: covered by route and stepper tests (see the tests)
   - `step_status` is the status of the latest trusted message with the same `step`, by `ts` as numbers. The plan message is not a step message. No message gives `pending`.
   - `thread_status` gives `needs_approval`, `rejected`, `running`, `waiting`, `failed`, and `done` for the matching threads.
   - A thread is `done` when the last bot step has a type 5 message with no `next`. A thread with a human last step is `done` only after the approval message is `done`.

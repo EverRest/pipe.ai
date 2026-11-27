@@ -9,17 +9,38 @@ from concurrent.futures import ThreadPoolExecutor
 from pipe import state
 from pipe.capset import collect
 from pipe.card_sync import sync_card
+from pipe.cards import CardCache
 from pipe.config import Config
 from pipe.core.card import Identity as CardIdentity
 from pipe.core.card import build_card
 from pipe.core.catchup import parents_to_scan, pick_missed
-from pipe.core.contract import MentionEvent, Message, RuntimeFailed, RuntimeInput
+from pipe.core.contract import (
+    ClickEvent,
+    MentionEvent,
+    Message,
+    ReactionEvent,
+    RuntimeFailed,
+    RuntimeInput,
+)
 from pipe.core.dedupe import remember
-from pipe.core.exposure import render_list
+from pipe.core.exposure import render_list, state_of
+from pipe.core.pipeline import validate_plan
+from pipe.core.render import render_plan
+from pipe.core.route import (
+    TASK_EVENT,
+    BotMessage,
+    ThreadState,
+    Wake,
+    card_view,
+    route,
+    wake_all,
+)
 from pipe.core.router import is_owner, should_handle
 from pipe.core.status import parse_status_messages, recent, render_summary
 from pipe.core.summary import build_summary
 from pipe.owner_summary import send_summary
+from pipe.planner import PlanResult, plan
+from pipe.stepper import Stepper
 
 WEEK = 7 * 86400
 log = logging.getLogger("pipe.adapter")
@@ -32,8 +53,27 @@ def _setup_log() -> None:
 
 
 class Adapter:
-    def __init__(self, cfg: Config, transport, runtime, scrub_fn: Callable, escape_fn: Callable):
+    def __init__(
+        self,
+        cfg: Config,
+        transport,
+        runtime,
+        scrub_fn: Callable,
+        escape_fn: Callable,
+        *,
+        flows: dict | None = None,
+        expand: Callable | None = None,
+        caps: dict | None = None,
+        stepper_kw: dict | None = None,
+    ):
+        """`flows`/`expand`: template store and expansion (spec 006; empty until wired).
+        `caps`: exposed capabilities by id (default: found at start). `stepper_kw`: timer etc."""
         self.cfg, self.t, self.rt = cfg, transport, runtime
+        self.flows, self.expand, self.caps = flows or {}, expand, dict(caps or {})
+        self.stepper = Stepper(transport, runtime, self._state, self.caps, **(stepper_kw or {}))
+        self.cards: CardCache | None = None
+        self.threads: dict[tuple, str] = {}  # (channel, ts) -> thread ts; ponytail: grows per run
+        self.handle = ""
         self.scrub, self.esc = scrub_fn, escape_fn
         seen = state.load_seen()
         self.event_ids, self.keys = seen["event_ids"], seen["mention_keys"]
@@ -45,18 +85,194 @@ class Adapter:
         return self.esc(self.scrub(text))
 
     # Receipt: decide, then mark in flight (memory only).
-    def _accept(self, e: MentionEvent):
+    def _accept(self, e: MentionEvent, who: str = ""):
         d = should_handle(
-            e, self.agent_id, self.t.mention, self.event_ids, self.keys, self.in_flight
+            e, who or self.agent_id, self.t.mention, self.event_ids, self.keys, self.in_flight
         )
         if d.action == "ignore":
             return None
         self.in_flight.update({f"{e.channel}:{e.ts}", *([e.event_id] if e.event_id else [])})
         return d
 
+    # --- stage 003: thread state, routing, decisions
+    def _cards(self) -> dict:
+        try:
+            if self.cards is None:
+                self.cards = CardCache(self.t, self.t.find_channel(self.cfg.agents_channel))
+            return self.cards.cards()
+        except Exception as x:
+            log.info("no cards: %s", type(x).__name__)
+            return {}
+
+    def _state(self, channel: str, thread_ts: str) -> ThreadState:
+        msgs = tuple(self.t.replies(channel, thread_ts))
+        for m in msgs:
+            self.threads[(channel, m.ts)] = m.thread
+        parent = next((m for m in msgs if m.ts == thread_ts), None)
+        cards = self._cards()
+        users = self.cards.agent_users() if self.cards else {}
+        return ThreadState(
+            channel, thread_ts, parent.sender_id if parent else None,
+            parent.text if parent else "", msgs, cards, users, self.agent_id, self.handle,
+            frozenset(self.in_flight), frozenset(self.event_ids), self.flows,
+            self.stepper.dialog_timeout_h,
+        )  # fmt: skip
+
+    def _thread_of(self, channel: str, ts: str) -> str | None:
+        """Thread of a reacted or clicked message: from memory, else a scan of recent parents."""
+        if (channel, ts) in self.threads:
+            return self.threads[(channel, ts)]
+        for p in self.t.history(channel, limit=100):
+            if p.ts == ts or (
+                p.latest_reply and any(m.ts == ts for m in self.t.replies(channel, p.ts))
+            ):
+                return p.thread
+        return None
+
+    def _bot_event(self, e: MentionEvent) -> BotMessage | None:
+        """A mention from a bot is a handoff only when the message holds task metadata."""
+        m = next((x for x in self.t.replies(e.channel, e.thread_ts) if x.ts == e.ts), None)
+        md = (m.metadata or {}) if m else {}
+        if md.get("event_type") != TASK_EVENT:
+            return None
+        self._cards()
+        if self.cards:
+            self.cards.note_sender(m.sender_id)
+        return BotMessage(
+            e.channel, e.ts, e.thread_ts, m.sender_id, md.get("event_payload"),
+            m.sender_handle, e.event_id, m.sender_is_bot,
+        )  # fmt: skip
+
+    def _keys(self, e, d, channel: str) -> set[str]:
+        keys = {k for k in (getattr(e, "event_id", None),) if k}
+        if isinstance(e, MentionEvent):
+            keys.add(f"{channel}:{e.ts}")
+        if d.action in ("plan", "plan_flow"):
+            keys.add(f"plan:{channel}:{e.ts if hasattr(e, 'ts') else e.thread_ts}")
+        if d.action == "claim":
+            keys.add(f"step:{channel}:{d.arg[0].thread_ts}:{d.arg[1]}")
+        return keys
+
+    def _decide(self, e):
+        """Receipt: route one event. Gives a job (function and args) or None. Marks in flight."""
+        if isinstance(e, MentionEvent):
+            thread = e.thread_ts
+            if e.sender_is_bot and not (e := self._bot_event(e)):
+                return None
+        elif isinstance(e, ReactionEvent | ClickEvent):
+            if e.event_id and (e.event_id in self.event_ids or e.event_id in self.in_flight):
+                return None
+            thread = self._thread_of(e.channel, getattr(e, "item_ts", None) or e.message_ts)
+        else:
+            return None
+        if not thread:
+            return None
+        d = route(e, self._state(e.channel, thread))
+        if isinstance(e, MentionEvent) and (
+            d.action in ("chat", "status_query") or d.reason == "no mention"
+        ):
+            # stage 001 path: its tag is the agent id, the routed one is the handle
+            if old := self._accept(e, self.handle) or self._accept(e, self.agent_id):
+                return self._process, e, old.action
+            return None
+        keys = self._keys(e, d, e.channel)
+        if d.action == "ignore" or keys & self.in_flight:
+            return None
+        self.in_flight |= keys
+        return self._run, e, d, keys, (e.channel, thread)
+
     def on_event(self, e) -> None:
-        if isinstance(e, MentionEvent) and (d := self._accept(e)):
-            self.submit(self._process, e, d.action)
+        try:
+            if job := self._decide(e):
+                self.submit(*job)
+        except Exception:
+            log.exception("event failed")
+
+    def _run(self, e, d, keys, where) -> None:
+        """Run one decision. An error is logged: one thread never stops the adapter."""
+        try:
+            self._act(e, d, where)
+            if eid := getattr(e, "event_id", None):
+                self.event_ids = remember(self.event_ids, eid)
+            if isinstance(e, MentionEvent | BotMessage):
+                self.keys = remember(self.keys, f"{e.channel}:{e.ts}")
+                state.save_state(last_seen_ts=e.ts)
+            state.save_seen(self.event_ids, self.keys)
+        except Exception:
+            log.exception("%s failed", d.action)
+        finally:
+            self.in_flight -= keys
+
+    def _act(self, e, d, where) -> None:
+        st, a = self.stepper, d.action
+        if a in ("plan", "plan_flow"):
+            self._plan(d, self._state(*where))
+        elif a == "start":
+            st.start_pipeline(self._state(d.arg.channel, d.arg.thread), d.arg)
+        elif a == "claim":
+            st.run_step(*d.arg)
+        elif a == "refuse":
+            st.refuse(e, d.reason)
+        elif a == "approve":
+            st.approve_step(d.arg)
+        elif a == "release":
+            st.release_step(d.arg)
+        elif a == "retry":
+            st.retry_step(*d.arg)
+        elif a == "resume":
+            st.resume_step(d.arg[0])
+        elif a == "expire_dialog":
+            st.expire_dialog(d.arg.thread, d.arg.ts, d.arg.channel)
+        elif a == "interrupt":
+            st.interrupt(d.arg)
+
+    def _plan(self, d, ts: ThreadState) -> None:
+        cards = card_view(ts.cards)
+        if d.action == "plan_flow":
+            res = self._flow_plan(d.arg, cards, ts.starter)
+        else:
+            res = plan(ts.parent_text, cards, self.flows, self.rt, ts.starter, self.expand)
+        if res.errors:
+            text = self._safe("I could not build a plan: " + "; ".join(res.errors)[:300])
+            self.t.post_message(ts.channel, text, thread=ts.thread_ts)
+            return
+        p = {
+            "v": 1, "task_id": ts.thread_ts, "phase": "plan", "status": "needs_approval",
+            "by": ts.self_id, "hop": 0, "step": 0,
+            "pipeline": {"steps": res.steps, "source": res.source},
+        }  # fmt: skip
+        names = {k: c.get("name", k) for k, c in ts.cards.items()}
+        text = self._safe(render_plan(res.steps, names))
+        meta = {"event_type": TASK_EVENT, "event_payload": p}
+        self.t.post_message(ts.channel, text, thread=ts.thread_ts, metadata=meta)
+
+    def _flow_plan(self, name, cards, starter) -> PlanResult:
+        t = self.expand(name) if self.expand and name in self.flows else None
+        if not t:
+            return PlanResult(errors=["unknown flow"])
+        raw = {"steps": t["steps"], "source": t["source"]}
+        errs = validate_plan(raw, cards, starter, self.flows)
+        return PlanResult(errors=errs) if errs else PlanResult(list(t["steps"]), name, t["source"])
+
+    def wake_pass(self) -> None:
+        """Catch-up for pipelines: ask `wake_all` about each recent thread of the work channel."""
+        try:
+            ch = self.t.find_channel(getattr(self.cfg, "work_channel", "pipe-work"))
+            parents = self.t.history(ch, oldest=str(time.time() - WEEK))
+        except Exception as x:
+            log.info("no wake pass: %s", type(x).__name__)
+            return
+        for p in parents:
+            try:
+                w = Wake(p.ts, time.time())
+                for d in wake_all(w, self._state(ch, p.ts)):
+                    keys = self._keys(w, d, ch)
+                    if keys & self.in_flight:
+                        continue
+                    self.in_flight |= keys
+                    self._run(w, d, keys, (ch, p.ts))
+            except Exception:
+                log.exception("wake failed for %s", p.ts)
 
     def _process(self, e: MentionEvent, action: str) -> None:
         key = f"{e.channel}:{e.ts}"
@@ -125,6 +341,7 @@ class Adapter:
             e = MentionEvent(m.channel, m.ts, m.thread, m.sender_id, m.sender_is_bot, m.text)
             if d := self._accept(e):
                 self._process(e, d.action)
+        self.wake_pass()
 
     def publish_capabilities(self, me) -> None:
         """Log the list, sync the card, DM the summary. An error is logged, never raised."""
@@ -153,18 +370,28 @@ class Adapter:
         except Exception:
             log.exception("summary step failed")
 
+    def _exposed(self) -> dict:
+        try:
+            found, _ = collect(self.cfg)
+        except Exception:
+            log.exception("discovery failed")
+            return {}
+        return {c.id: c for c in found if state_of(c, self.cfg.exposed) == "exposed"}
+
     def start(self) -> None:
         me = self.t.whoami()
-        self.agent_id = me.agent_id
+        self.agent_id, self.handle = me.agent_id, me.handle
         self.publish_capabilities(me)
+        if not self.caps:
+            self.caps.update(self._exposed())
         state.init_last_seen(f"{time.time():.6f}")
         self.t.on_event(self.on_event)
         self.t.on_reconnect(lambda: self.submit(self.catch_up))
         self.catch_up()
 
 
-def build(cfg: Config, transport, runtime, scrub_fn: Callable, escape_fn: Callable) -> Adapter:
-    return Adapter(cfg, transport, runtime, scrub_fn, escape_fn)
+def build(cfg: Config, transport, runtime, scrub_fn, escape_fn, **kw) -> Adapter:
+    return Adapter(cfg, transport, runtime, scrub_fn, escape_fn, **kw)
 
 
 def run_forever(cfg: Config, transport, runtime, scrub_fn, escape_fn, connect: Callable) -> None:

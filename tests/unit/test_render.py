@@ -56,3 +56,19 @@ def test_plan_text_names_agents_and_cleans_goal():
 
 def test_write_step():
     assert render_step(0, 2, "write", "a", "running") == "Step 1 of 2 (write, a): running"
+
+
+def test_trigger_texts():
+    from pipe.core.render import render_trigger
+
+    ask = render_trigger("pipe-gitlab", "needs approval", owner="<@U_OWNER>")
+    assert ask == (
+        "Trigger pipe-gitlab: needs approval. <@U_OWNER> Accept or reject this pipeline."
+    )
+    assert render_trigger("pipe-gitlab", "failed", "rejected") == (
+        "Trigger pipe-gitlab: failed. Reason: rejected"
+    )
+    bad = render_trigger(
+        "<@U9> xoxb-123456789012", "failed", "step 2: <!channel>", escape=Fmt.escape_mentions
+    )
+    assert "xoxb" not in bad and "<@U9>" not in bad and "<!channel>" not in bad

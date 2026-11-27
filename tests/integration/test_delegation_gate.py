@@ -74,11 +74,12 @@ def test_read_step_from_a_stranger_has_no_gate():
     assert meta(r.gate())["status"] == "done" and len(r.rt_b.inputs) == 1
 
 
-def test_owner_started_thread_has_no_gate():
+def test_owner_started_thread_with_other_bot_is_gated():
+    # B1 is another agent's bot: _exec would not trust the thread, so the gate fires
     r = Rig()
     r.handoff(r.seed(starter="OB"))
-    assert meta(r.gate())["status"] == "done"
-    assert r.rt_b.inputs[0].request.access == "write"
+    assert meta(r.gate())["status"] == "needs_approval"
+    assert not r.rt_b.inputs
 
 
 def test_one_bot_one_gate_and_no_hop_added():

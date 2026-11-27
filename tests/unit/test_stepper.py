@@ -460,3 +460,8 @@ def test_other_person_in_owner_thread_gates_write_step():
     r = _write_gate(Message("C", "1700000900.000000", TOP, "U7", False, "hi"))
     assert r.rt.inputs == [] and meta(r.ft.updates[-1])["status"] == "needs_approval"
     assert "<@OA>" in r.ft.updates[-1]["text"]  # the card owner, same as the click check
+
+
+def test_other_bot_in_owner_thread_gates_write_step():
+    r = _write_gate(Message("C", "1700000900.000000", TOP, "B9", True, "hi"))
+    assert r.rt.inputs == [] and meta(r.ft.updates[-1])["status"] == "needs_approval"

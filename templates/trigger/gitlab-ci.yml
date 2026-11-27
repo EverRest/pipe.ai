@@ -1,0 +1,16 @@
+# Example GitLab CI job: post one trigger mention to the work channel.
+# Set SLACK_TRIGGER_TOKEN as a masked CI/CD variable in the project settings.
+# Replace <CHANNEL_ID> and <AGENT_USER_ID> with your values.
+# Do not echo variables in this job.
+post-trigger:
+  image: python:3.12-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - >
+      python3 templates/trigger/post_trigger.py
+      --token-env SLACK_TRIGGER_TOKEN
+      --channel "<CHANNEL_ID>"
+      --agent "<AGENT_USER_ID>"
+      --flow review
+      --title "Review the open MR"

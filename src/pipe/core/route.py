@@ -12,6 +12,7 @@ from pipe.core.gate import step_rejected
 from pipe.core.pipeline import Pipeline, Step, matches_tag
 from pipe.core.router import should_handle
 from pipe.core.source import effective_source, hop_limit, parse_source
+from pipe.core.trigger import is_trigger_card, parse_trigger
 from pipe.core.trust import hop_refused, trusted_sender
 
 TASK_EVENT = "pipe.task.v1"
@@ -42,6 +43,7 @@ class BotMessage:
     sender_handle: str | None = None
     event_id: str | None = None
     sender_is_bot: bool = True
+    text: str = ""
 
 
 @dataclass(frozen=True)
@@ -322,10 +324,30 @@ def _human(ev: MentionEvent, v: View) -> Decision:
     return Decision({"reply": "chat"}.get(d.action, d.action), d.reason)
 
 
+def _trigger(ev: BotMessage, v: View) -> Decision:
+    """A top-level message of a trigger bot: it may start a plan (FR-014 to FR-018)."""
+    ts, p = v.ts, ev.payload
+    if ev.thread_ts != ev.ts or (isinstance(p, dict) and p.get("next")):
+        return _ign("trigger_not_agent")
+    if first_agent(ev.text, ts.agent_users) != ts.self_id:
+        return _ign("not_planner")
+    t = parse_trigger(ev, ts.cards, flow_word(ev.text))
+    if t is None:
+        return _ign("bad_payload")
+    planned = any(x["phase"] == "plan" and x["by"] == ts.self_id for _, x in v.base)
+    if planned or f"trigger:{ev.channel}:{ev.ts}" in ts.in_flight:
+        return _ign("already_planned")
+    return Decision("trigger", arg=t)
+
+
 def _bot(ev: BotMessage, v: View) -> Decision:
     ts, p = v.ts, ev.payload
     if not trusted_sender(ev, ts.cards):
         return _ign("no_card")
+    if is_trigger_card(ts.cards.get(ev.sender_id)):
+        return _trigger(ev, v)  # a trigger bot is never a step agent
+    if ev.thread_ts == ev.ts:
+        return _ign("not_trigger")
     if not _valid(p):
         return _ign("bad_payload")
     if p["by"] != ev.sender_id:
@@ -420,6 +442,17 @@ def _click(ev: ClickEvent, v: View) -> Decision:
         return _ign("no_target")
     m, p = hit
     i = p.get("step")
+    if (
+        ev.action_id in ("pipe_accept", "pipe_reject")
+        and p["phase"] == "plan"
+        and is_trigger_card(ts.cards.get(ts.starter))
+    ):  # the buttons of a trigger plan; the card owner decides
+        owner = v.owner(ts.self_id)
+        if not owner or ev.sender_id != owner:
+            return _ign("not_owner")
+        if p["status"] != "needs_approval" or not v.plan or v.plan[0].ts != m.ts or v.started():
+            return _ign("not_pending")
+        return Decision("start" if ev.action_id == "pipe_accept" else "reject_plan", arg=m)
     if ev.action_id in ("pipe_accept", "pipe_reject"):
         owner = v.owner(ts.self_id)
         if not owner or ev.sender_id != owner:
@@ -478,7 +511,16 @@ def wake(ev: Wake, v: View) -> list[Decision]:
     mine = any(p["phase"] == "plan" and p["by"] == me for _, p in v.base)
     agents = [ts.agent_users[h] for h in mentions(ts.parent_text) if h in ts.agent_users]
     flow = flow_word(ts.parent_text)
-    if not mine and agents and agents[0] == me and (len(set(agents)) > 1 or flow):
+    parent = next((m for m in ts.messages if m.ts == ts.thread_ts), None)
+    if parent and is_trigger_card(ts.cards.get(ts.starter)):
+        p = (parent.metadata or {}).get("event_payload")
+        ev = BotMessage(
+            parent.channel, parent.ts, parent.thread, parent.sender_id, p,
+            parent.sender_handle, text=parent.text,
+        )  # fmt: skip
+        if (d := _trigger(ev, v)).action == "trigger":
+            out.append(d)
+    elif not mine and agents and agents[0] == me and (len(set(agents)) > 1 or flow):
         out.append(Decision("plan_flow", arg=flow) if flow else Decision("plan"))
     return out
 

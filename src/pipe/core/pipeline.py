@@ -123,6 +123,8 @@ def _step_errors(i, s, n, cards, starter, prev):
             entry = next((x for x in card.skills if x.get("id") == cap), None) if card else None
             if card is None:
                 err(f"agent {agent} has no card")
+            elif getattr(card, "kind", None) == "trigger":
+                err(f"agent {agent} is a trigger bot")
             elif entry is None or not access_fits(access, entry.get("access")):
                 err(f"capability {cap} is not available on agent {agent}")
         p = s.get("payload")

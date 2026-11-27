@@ -162,3 +162,56 @@ def test_no_secret_in_log_or_error(tmp_path, caplog):
     text = caplog.text + str(e.value)
     assert "xoxb-abcdefghij" not in text and "rm -rf" not in text and "$(id)" not in text
     assert "boom" in caplog.text and "y" * 201 not in caplog.text
+
+
+def fout(files):
+    return json.dumps({"text": "t", "status": "done", "files": files})
+
+
+def test_files_parsed(tmp_path):
+    def run(argv, stdin, env, cwd, timeout):
+        (Path(cwd) / "b.html").write_text("x")
+        return 0, fout(["b.html"]), ""
+
+    o = rt(run, tmp_path).run(inp())
+    assert len(o.files) == 1 and o.files[0].endswith("/b.html") and Path(o.files[0]).is_absolute()
+    assert Path(o.files[0]).is_file() and o.run_dir == str(
+        Path(o.files[0]).parent
+    )  # kept for upload
+    assert rt(Runner(), tmp_path).run(inp()).files == []
+
+
+def _refused(tmp_path, setup, files, reason="file outside run directory"):
+    seen = []
+
+    def run(argv, stdin, env, cwd, timeout):
+        seen.append(cwd)
+        setup(Path(cwd))
+        return 0, fout(files), ""
+
+    with pytest.raises(RuntimeFailed, match=reason) as e:
+        rt(run, tmp_path).run(inp())
+    assert str(tmp_path) not in str(e.value) and not Path(seen[0]).exists()
+
+
+@pytest.mark.parametrize("f", ["/etc/passwd", "../x", "a/../../x"])
+def test_files_escape_refused(tmp_path, f):
+    _refused(tmp_path, lambda d: None, [f])
+
+
+def test_files_symlink_refused(tmp_path):
+    out = tmp_path / "secret"
+    out.write_text("s")
+    _refused(tmp_path, lambda d: (d / "l").symlink_to(out), ["l"])
+
+
+def test_files_too_large_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr("pipe.runtime_exec.FILE_BYTES", 3)
+    _refused(tmp_path, lambda d: (d / "f").write_text("abcd"), ["f"], "file too large")
+
+
+@pytest.mark.parametrize("files", ["/a", [1], ["/a", None], {"a": 1}, ["x" * 4097]])
+def test_bad_files_refused(tmp_path, files):
+    out = json.dumps({"text": "t", "status": "done", "files": files})
+    with pytest.raises(RuntimeFailed):
+        rt(Runner(out=out), tmp_path).run(inp())

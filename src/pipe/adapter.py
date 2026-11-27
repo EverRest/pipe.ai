@@ -25,7 +25,7 @@ from pipe.core.contract import (
 from pipe.core.dedupe import remember
 from pipe.core.exposure import render_list, state_of
 from pipe.core.pipeline import validate_plan
-from pipe.core.render import render_plan
+from pipe.core.render import render_plan, render_trigger
 from pipe.core.route import (
     TASK_EVENT,
     BotMessage,
@@ -38,9 +38,10 @@ from pipe.core.route import (
 from pipe.core.router import is_owner, should_handle
 from pipe.core.status import parse_status_messages, recent, render_summary
 from pipe.core.summary import build_summary
+from pipe.core.trigger import decide_trigger
 from pipe.owner_summary import send_summary
 from pipe.planner import PlanResult, plan
-from pipe.stepper import Stepper
+from pipe.stepper import GATE, Stepper
 
 WEEK = 7 * 86400
 log = logging.getLogger("pipe.adapter")
@@ -141,7 +142,7 @@ class Adapter:
             self.cards.note_sender(m.sender_id)
         return BotMessage(
             e.channel, e.ts, e.thread_ts, m.sender_id, md.get("event_payload"),
-            m.sender_handle, e.event_id, m.sender_is_bot,
+            m.sender_handle, e.event_id, m.sender_is_bot, m.text,
         )  # fmt: skip
 
     def _keys(self, e, d, channel: str) -> set[str]:
@@ -152,8 +153,10 @@ class Adapter:
             keys.add(f"plan:{channel}:{e.ts if hasattr(e, 'ts') else e.thread_ts}")
         if d.action == "claim":
             keys.add(f"step:{channel}:{d.arg[0].thread_ts}:{d.arg[1]}")
-        if d.action in ("accept", "reject"):
+        if d.action in ("accept", "reject", "reject_plan"):
             keys.add(f"{d.action}:{channel}:{d.arg.ts}")
+        if d.action == "trigger":
+            keys.add(f"trigger:{channel}:{d.arg.ts}")
         return keys
 
     def _decide(self, e):
@@ -213,8 +216,16 @@ class Adapter:
         st, a = self.stepper, d.action
         if a in ("plan", "plan_flow"):
             self._plan(d, self._state(*where))
+        elif a == "trigger":
+            self._trigger(d.arg, self._state(*where))
         elif a == "start":
-            st.start_pipeline(self._state(d.arg.channel, d.arg.thread), d.arg)
+            ts = self._state(d.arg.channel, d.arg.thread)
+            if isinstance(e, ClickEvent):  # Accept on a trigger plan
+                st.accept_plan(ts, d.arg)
+            else:
+                st.start_pipeline(ts, d.arg)
+        elif a == "reject_plan":
+            st.reject_plan(d.arg)
         elif a == "claim":
             return st.run_step(*d.arg)
         elif a == "refuse":
@@ -255,6 +266,51 @@ class Adapter:
         text = self._safe(render_plan(res.steps, names))
         meta = {"event_type": TASK_EVENT, "event_payload": p}
         self.t.post_message(ts.channel, text, thread=ts.thread_ts, metadata=meta)
+
+    def _trigger(self, t, ts: ThreadState) -> None:
+        """Plan a trigger (no runtime call). Gate: allowlist starts it, else the owner decides."""
+        cards, me = card_view(ts.cards), ts.cards.get(ts.self_id) or {}
+        if t.flow:
+            res = self._flow_plan(t.flow, cards, t.sender)
+            errs = (
+                ["could not build a plan (unknown flow)"]
+                if res.errors == ["unknown flow"]
+                else res.errors
+            )
+            steps, source = res.steps, res.source
+        else:
+            steps = [{k: v for k, v in vars(x).items() if v is not None} for x in t.pipeline.steps]
+            source = "free"  # never read from the trigger; a template match is a spec 006 job
+            errs = validate_plan({"steps": steps, "source": source}, cards, t.sender, self.flows)
+        owner = me.get("owner")
+        errs = errs or ([] if owner else ["no owner"])
+        base = {
+            "v": 1,
+            "task_id": ts.thread_ts,
+            "phase": "plan",
+            "by": ts.self_id,
+            "hop": 0,
+            "step": 0,
+        }
+        post = lambda text, p, b=None: self.t.post_message(  # noqa: E731
+            ts.channel, text, ts.thread_ts, {"event_type": TASK_EVENT, "event_payload": p}, b
+        )
+        if errs:
+            reason = "; ".join(errs)
+            post(
+                self._safe("Plan rejected. " + reason[:300]),
+                {**base, "status": "failed", "reason": reason[:200]},
+            )
+            return
+        p = {**base, "status": "needs_approval", "pipeline": {"steps": steps, "source": source}}
+        names = {k: c.get("name", k) for k, c in ts.cards.items()}
+        if decide_trigger(t.sender, self.stepper.allowlist)[0] == "allow":
+            post(self._safe(render_plan(steps, names, footer="Trigger allowed: starting.")), p)
+            self.stepper.start_pipeline(self._state(ts.channel, ts.thread_ts), None)
+            return
+        who = (ts.cards.get(t.sender) or {}).get("name") or "trigger"
+        ask = render_trigger(who, "needs approval", owner=self.t.mention(owner), escape=self.esc)
+        post(self._safe(render_plan(steps, names, footer="")).rstrip() + "\n" + ask, p, GATE)
 
     def _flow_plan(self, name, cards, starter) -> PlanResult:
         t = self.expand(name) if self.expand and name in self.flows else None

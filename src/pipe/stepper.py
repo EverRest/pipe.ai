@@ -1,16 +1,18 @@
 """Step state machine over an injected transport and runtime. No chat or tool names here.
 Status texts come from `core/render.py`. The thread is the state: every call re-reads it."""
 
+import shutil
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 from pipe.core.capability import Capability
 from pipe.core.claim import resolve_claim, ts_key
 from pipe.core.context import effective_payload
-from pipe.core.contract import Button, RuntimeFailed, RuntimeInput
-from pipe.core.gate import gate_decision, gate_required, gate_text
+from pipe.core.contract import Button, RuntimeFailed, RuntimeInput, UploadRefused
+from pipe.core.gate import gate_decision, gate_required, gate_text, in_allowlist
 from pipe.core.pipeline import Step, access_fits, matches_tag, validate_plan
-from pipe.core.render import render_step, render_stop
+from pipe.core.render import render_step, render_stop, render_trigger
 from pipe.core.route import TASK_EVENT, UNVERIFIED, View, card_view
 from pipe.core.runrequest import build_run_request
 from pipe.core.scrub import scrub
@@ -126,6 +128,23 @@ class Stepper:
         self._post(ts, self._handoff_text(ts, v, 0), p)
         self._schedule(ts, v, 0, 1)
 
+    def accept_plan(self, ts, msg):
+        """Owner clicked Accept on a trigger plan: remove the buttons, then start."""
+        if View(ts).started():
+            return
+        self._update(ts, msg.ts, msg.text, msg.metadata["event_payload"], None)
+        self.start_pipeline(ts, msg)
+
+    def reject_plan(self, msg):
+        """Owner clicked Reject on a trigger plan: `failed`, `rejected`. No retry."""
+        ts = self.load(msg.channel, msg.thread)
+        if not self._once(f"reject_plan:{msg.channel}:{msg.ts}"):
+            return
+        p = {**msg.metadata["event_payload"], "status": "failed", "reason": "rejected"}
+        name = (ts.cards.get(ts.starter) or {}).get("name") or "trigger"
+        text = render_trigger(name, "failed", "rejected", escape=self.t.escape_mentions)
+        self._update(ts, msg.ts, text, p, None)
+
     def refuse(self, ev, reason="hop limit exceeded"):
         ts = self.load(ev.channel, ev.thread_ts)
         if not self._once(f"refuse:{ev.channel}:{ev.ts}"):
@@ -188,7 +207,8 @@ class Stepper:
             self.t.delete_message(ts.channel, claim_ts)
             return "lost"
         v = View(ts)
-        humans = [m.sender_id for m in ts.messages if not m.sender_is_bot]
+        # same rule as _exec: any sender but this agent's own bot counts, bots too
+        humans = [m.sender_id for m in ts.messages if m.sender_id != ts.self_id]
         step = SimpleNamespace(access=v.steps[i]["access"])
         if gate_required(step, ts.starter, v.owner(ts.self_id), humans):
             return self._gate(ts, v, i, claim_ts, hop)
@@ -213,7 +233,9 @@ class Stepper:
         sender = self._sender(v, i)
         card = ts.cards.get(sender) or {}
         who = gate_decision(sender or "", ts.starter, card.get("owner"), self.allowlist)
-        if who == "auto":
+        # "auto" also needs every sender in the thread (bots too) to be the owner or allowlisted
+        senders = {m.sender_id for m in ts.messages if m.sender_id != ts.self_id}
+        if who == "auto" and all(h == owner or in_allowlist(self.allowlist, h) for h in senders):
             return self._exec(ts, i, claim_ts, hop)
         name = lambda x: self._clean((x or {}).get("name") or "agent")  # noqa: E731
         me = ts.cards.get(ts.self_id)
@@ -346,6 +368,14 @@ class Stepper:
             return "lost"
         reply = self._clean(out.text)
         arts = [scrub(a) for a in out.artifacts if isinstance(a, str) and a.startswith("https://")]
+        try:  # only the confined paths of an exec output; a plain output has none
+            files = getattr(out, "files", ())
+            arts += self.upload_run_files(ts.channel, ts.thread_ts, files, s["goal"])
+        except UploadRefused:
+            return fail("upload refused")
+        finally:  # ponytail: an early return before this point leaves the run dir behind
+            if run_dir := getattr(out, "run_dir", None):
+                shutil.rmtree(run_dir, ignore_errors=True)
         gate = s.get("gate") == "approval"
         extra = {}
         if out.proposal is not None:
@@ -364,6 +394,11 @@ class Stepper:
             return "needs_approval"
         self._result(ts, v, i, base, reply, arts)
         return "done"
+
+    def upload_run_files(self, channel, thread, files, goal) -> list[str]:
+        """Upload each file of a run through the transport; give the links. Raises UploadRefused."""
+        title = scrub(goal)
+        return [self.t.upload_file(channel, thread, Path(f).name, Path(f), title) for f in files]
 
     def _result(self, ts, v, i, base, reply, arts):
         """Post the result of step `i`: the final message, an approval request, or a handoff."""

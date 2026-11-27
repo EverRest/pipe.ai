@@ -213,3 +213,10 @@ def test_garbage_does_not_raise():
 def test_garbage_prev():
     assert validate_plan({"steps": [5, human()]}, CARDS, "U1")
     assert validate_plan({"steps": [{"agent": ["x"]}, human()]}, CARDS, "U1")
+
+
+def test_trigger_bot_is_never_a_step_agent():
+    cards = {**CARDS, "BT": NS(owner="OT", kind="trigger", skills=[])}
+    errs = validate_plan({"steps": [bot("B1"), bot("BT", "cap-1")]}, cards)
+    assert "step 2: agent BT is a trigger bot" in errs
+    assert validate_plan({"steps": [bot("B1"), tag()]}, cards) == []

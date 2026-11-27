@@ -89,3 +89,58 @@ def test_metrics_passes_its_args_to_the_handler():
     seen = []
     code = main(["metrics", "--weeks", "2"], metrics_handler=lambda a: seen.append(a) or 3)
     assert (code, seen) == (3, [["--weeks", "2"]])
+
+
+def test_metrics_uses_config_values():
+    from types import SimpleNamespace as NS
+
+    from pipe.cli import _metrics_args, _mr_state_reader
+
+    got = []
+    cfg = NS(
+        work_channel="w", mr_state={"gitlab": {"url": "https://g.example", "token": "keychain:gl"}}
+    )
+    mk = lambda url, tok: got.append((url, tok)) or "reader"  # noqa: E731
+    assert _mr_state_reader(cfg, lambda svc: f"tok-{svc}", mk) == "reader"
+    assert got == [("https://g.example", "tok-gl")]
+    assert _mr_state_reader(NS(mr_state=None), None, None) is None
+    assert _metrics_args(cfg, ["--weeks", "1"]) == ["--channel", "w", "--weeks", "1"]
+    assert _metrics_args(cfg, ["--channel", "x"]) == ["--channel", "x"]
+
+
+def test_declared_http_gets_keychain_reader_and_never_prints_token(capsys):
+    from types import SimpleNamespace as NS
+
+    from pipe.cli import _build_runtime
+    from pipe.core.contract import RuntimeInput
+    from pipe.keychain import read_token
+
+    entry = {
+        "id": "h", "runtime": "http", "name": "H", "description": "d", "access": "read",
+        "url": "https://api.example/x", "token": "keychain:svc",
+    }  # fmt: skip
+    cfg = NS(capabilities=[entry], exposed=["http:h"], step_timeout_min=1)
+    seen, sent = [], []
+    body = b'{"text": "ok", "status": "done"}'
+
+    def transport(url, headers, data, timeout):
+        sent.append(headers)
+        return 200, body
+
+    def reader(svc):
+        seen.append(svc)
+        return "tok-1234567890abcdef"
+
+    class Default:
+        def run(self, inp):
+            return "default"
+
+    rt = _build_runtime(cfg, Default(), reader, transport=transport)
+    req = NS(capabilities=("http:h",), access="read", requester_is_owner=True, output_schema=None)
+    out = rt.run(RuntimeInput([], {"id": "T", "purpose": "step", "step": 0}, True, req))
+    assert out.text == "ok" and seen == ["svc"]
+    assert sent[0]["Authorization"] == "Bearer tok-1234567890abcdef"
+    assert "tok-1234567890abcdef" not in capsys.readouterr().out + repr(out)
+    assert rt.run(RuntimeInput([], {"id": "T"}, True)) == "default"
+    with pytest.raises(ValueError):
+        read_token("svc", "token")

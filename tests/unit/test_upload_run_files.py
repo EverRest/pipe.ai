@@ -62,3 +62,28 @@ def test_refused_file_fails_the_step(tmp_path):
     assert (p["status"], p["reason"]) == ("failed", "upload refused")
     assert r.ft.updates[-1]["buttons"]  # Retry
     assert not [x for x in r.ft.posts if "next" in (x["metadata"] or {}).get("event_payload", {})]
+
+
+def test_failed_run_uploads_files_and_fails_with_retry(tmp_path):
+    f = tmp_path / "log.txt"
+    f.write_text("x")
+    out = ExecOutput("t", status="failed", reason="r", files=[str(f)], run_dir=str(tmp_path))
+    r = Rig(seed=[first_handoff()], out=out)
+    r.ft.upload_roots = [tmp_path]
+    r.st.run_step(r.ev(first_handoff()), 0)
+    assert [u["name"] for u in r.ft.uploads] == ["log.txt"]
+    p = meta(r.ft.updates[-1])
+    assert (p["status"], p["reason"]) == ("failed", "run_failed")
+    assert r.ft.FILE_LINK in r.ft.updates[-1]["text"] and r.ft.updates[-1]["buttons"]
+    assert not tmp_path.exists()  # run dir removed
+
+
+def test_step_failing_before_upload_removes_run_dir(tmp_path):
+    d = tmp_path / "run1"
+    d.mkdir()
+    (d / "a.txt").write_text("x")
+    out = ExecOutput("t", status="delegate", files=[str(d / "a.txt")], run_dir=str(d))
+    r = Rig(seed=[first_handoff()], out=out)
+    r.st.run_step(r.ev(first_handoff()), 0)
+    assert meta(r.ft.updates[-1])["status"] == "failed"
+    assert not d.exists() and r.ft.uploads == []

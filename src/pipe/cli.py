@@ -23,6 +23,33 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
+class _Router:
+    """Declared `exec:`/`http:` capabilities go to their runtime; the rest to Claude."""
+
+    def __init__(self, default, by_prefix):
+        self.default, self.by_prefix = default, by_prefix
+
+    def run(self, inp):
+        ids = tuple(getattr(inp.request, "capabilities", None) or ())
+        rt = self.by_prefix.get(ids[0].split(":")[0]) if len(ids) == 1 else None
+        return (rt or self.default).run(inp)
+
+
+def _build_runtime(cfg, default, read_cap_token, scrub=None, esc=lambda s: s, **http_kw):
+    from pipe.core.scrub import scrub as _scrub
+    from pipe.runtime_exec import ExecRuntime
+    from pipe.runtime_http import HttpRuntime
+
+    scrub = scrub or _scrub
+    # read_token takes (service, account); a declared token is always account `token`.
+    http = HttpRuntime(
+        cfg, read_token=lambda svc, _acct: read_cap_token(svc), scrub=scrub, escape_mentions=esc,
+        **http_kw,
+    )  # fmt: skip
+    ex = ExecRuntime(cfg, scrub=scrub, escape_mentions=esc)
+    return _Router(default, {"http": http, "exec": ex})
+
+
 def _run_adapter() -> int:
     """Composition root for `pipe run`: the only place that names the Slack transport."""
     from slack_sdk import WebClient
@@ -30,7 +57,7 @@ def _run_adapter() -> int:
     from pipe import adapter
     from pipe.config import load_config
     from pipe.core.scrub import scrub
-    from pipe.keychain import read_token
+    from pipe.keychain import read_capability_token, read_token
     from pipe.runtime_claude import ClaudeRuntime
     from pipe.transport_slack import SlackTransport
 
@@ -40,35 +67,37 @@ def _run_adapter() -> int:
     t = SlackTransport(WebClient(token=bot), scrub=scrub)
     # The adapter escapes the reply once; the runtime only scrubs (no double escape).
     rt = ClaudeRuntime(cfg, scrub=scrub, escape_mentions=lambda s: s)
+    rt = _build_runtime(cfg, rt, read_capability_token, scrub)
     adapter.run_forever(cfg, t, rt, scrub, t.escape_mentions, lambda: t.connect(bot, app))
     return 0
 
 
+def _mr_state_reader(cfg, load_token, make):
+    """GitLab MR-state reader from `cfg.mr_state`, or None when it is not set."""
+    gl = (cfg.mr_state or {}).get("gitlab")
+    return make(gl["url"], load_token(gl["token"].removeprefix("keychain:"))) if gl else None
+
+
+def _metrics_args(cfg, argv):
+    return argv if "--channel" in argv else ["--channel", cfg.work_channel, *argv]
+
+
 def _run_metrics(argv: list[str]) -> int:
     """Composition root for `pipe metrics`: Slack reader plus the optional GitLab MR state."""
-    import yaml
     from slack_sdk import WebClient
 
     from pipe import gitlab_io, metrics_cli
     from pipe.config import load_config
     from pipe.core.scrub import scrub
     from pipe.keychain import read_token
-    from pipe.state import pipe_home
     from pipe.transport_slack import SlackTransport
 
     cfg = load_config()
     reader = SlackTransport(
         WebClient(token=read_token(cfg.slack_tokens.removeprefix("keychain:"), "bot")), scrub=scrub
     )
-    # `mr_state.gitlab` is read here until the config module validates it (T006).
-    gl = (yaml.safe_load((pipe_home() / "config.yaml").read_text()).get("mr_state") or {}).get(
-        "gitlab"
-    ) or {}
-    gitlab = None
-    if gl.get("url") and str(gl.get("token", "")).startswith("keychain:"):
-        token = gitlab_io.load_token(gl["token"].removeprefix("keychain:"))
-        gitlab = gitlab_io.make_mr_state(gl["url"], token)
-    return metrics_cli.main(argv, reader, gitlab)
+    gitlab = _mr_state_reader(cfg, gitlab_io.load_token, gitlab_io.make_mr_state)
+    return metrics_cli.main(_metrics_args(cfg, argv), reader, gitlab)
 
 
 def main(argv=None, flows_handler=None, run_handler=_run_adapter, metrics_handler=_run_metrics):

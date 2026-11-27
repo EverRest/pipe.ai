@@ -377,3 +377,37 @@ def test_write_tools_refuse_any_bash_rule():
     for rule in ["Bash(make:*)", "Bash(python:*)", "Bash"]:
         with pytest.raises(ConfigError, match="Bash rules are not allowed"):
             rc(write_tools=["Read", rule])
+
+
+def test_work_channel_and_mr_state_defaults():
+    c = cfg()
+    assert c.work_channel == "pipe-work" and c.mr_state is None
+
+
+def test_mr_state_valid():
+    gl = {"url": "https://git.example.com", "token": "keychain:gl"}
+    c = cfg(work_channel="w", mr_state={"gitlab": gl})
+    assert c.work_channel == "w" and c.mr_state == {"gitlab": gl}
+    assert cfg(mr_state={"gitlab": {**gl, "url": "http://localhost:8080"}}).mr_state
+
+
+@pytest.mark.parametrize(
+    "gl,key",
+    [
+        ({"url": "https://g.example", "token": "plain-secret-x"}, "mr_state"),
+        ({"url": "https://g.example", "token": "xoxb-1"}, "mr_state"),
+        ({"url": "http://g.example", "token": "keychain:gl"}, "mr_state"),
+        ({"url": "https://u:p@g.example", "token": "keychain:gl"}, "mr_state"),
+        ({"url": "https://g.example"}, "mr_state"),
+    ],
+)
+def test_mr_state_refused(gl, key):
+    with pytest.raises(ConfigError, match=f"{key}|plain token") as e:
+        cfg(mr_state={"gitlab": gl})
+    assert "plain-secret-x" not in str(e.value) and "g.example" not in str(e.value)
+
+
+@pytest.mark.parametrize("bad", ["", 5])
+def test_work_channel_refused(bad):
+    with pytest.raises(ConfigError, match="work_channel"):
+        cfg(work_channel=bad)

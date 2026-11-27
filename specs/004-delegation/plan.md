@@ -89,6 +89,8 @@ Repo paths and names never go into the card, so 002 FR-017 stays unchanged. `val
 
 **DQ8 = (a). `write_tools` has no bare `Bash`.** `write_tools` defaults to `[Read, Grep, Glob, Edit, Write]`. A scoped `Bash(<cmd>:*)` entry is allowed. A bare `Bash` entry is a config error. Reason: a `Bash` tool runs with the user rights of the owner and can leave the worktree. The path rules do not confine it. The cost: the agent cannot run tests by default. The MR review and CI check the change. Affected tasks: T003, T004, T020, T027.
 
+- Residual risk (004): the `.git` check does not cover the shared repo config under `.git/worktrees/`. Closing it is a separate task.
+
 ## Design questions O1 and O2 (pass 2, decided 2026-11-26)
 
 These points came out of the full analyze. The owner accepted the recommendation for each. They affect only a `write` step.

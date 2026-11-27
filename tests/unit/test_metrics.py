@@ -114,3 +114,9 @@ def test_render_no_text():
     assert "pipelines without manual help: 100% of 1 (threshold >= 50%)" in out
     assert "ok" in out and "secret" not in out and "request" not in out
     assert out.splitlines()[-1] == "  open waits: 0"
+
+
+def test_two_claims_alone_do_not_make_a_pipeline_unclean():
+    claims = [tm("BB", "1.0", status="claimed", step=1, ts=f"3.{k}") for k in range(2)]
+    t = thread(start(), *claims, tm("BB", "1.0", step=1))
+    assert compute_metrics([t], {}, CARDS)["clean"] == {"clean": 1, "total": 1}

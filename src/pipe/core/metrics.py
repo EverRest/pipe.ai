@@ -61,14 +61,13 @@ def compute_metrics(threads, mr_states, cards, weeks=4):
         if not (done or failed):
             continue
         total += 1
-        claims = Counter(p.get("step") for _, p in steps if p["status"] == "claimed")
         manual = any(
             not h.sender_is_bot
             and float(h.ts) > started[0]
             and not _answer(h, tasks, cards, starter)
             for h in msgs[1:]
         )
-        clean += done and not failed and not manual and max(claims.values(), default=0) < 2
+        clean += done and not failed and not manual
     return {
         "delegations": None
         if mr_states is None

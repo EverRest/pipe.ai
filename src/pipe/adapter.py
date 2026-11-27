@@ -323,7 +323,7 @@ class Adapter:
     def wake_pass(self) -> None:
         """Catch-up for pipelines: ask `wake_all` about each recent thread of the work channel."""
         try:
-            ch = self.t.find_channel(getattr(self.cfg, "work_channel", "pipe-work"))
+            ch = self.t.find_channel(self.cfg.work_channel)
             parents = self.t.history(ch, oldest=str(time.time() - WEEK))
         except Exception as x:
             log.info("no wake pass: %s", type(x).__name__)

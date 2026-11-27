@@ -47,6 +47,8 @@ class Config:
     worktree_root: str = str(Path("~/.pipe/worktrees").expanduser())
     base_branch: str = "main"
     allowlist: list[str] = field(default_factory=list)  # Slack IDs
+    work_channel: str = "pipe-work"
+    mr_state: dict | None = None  # {"gitlab": {"url", "token": "keychain:<service>"}}
 
 
 def _strs(val, key: str) -> list[str]:
@@ -194,6 +196,22 @@ def _caps(raw, exposed: list[str]) -> list[dict]:
     return out
 
 
+def _mr_state(raw) -> dict | None:
+    """Optional GitLab MR state. Errors name the key, never a URL or a token."""
+    if raw is None:
+        return None
+    gl = raw.get("gitlab") if isinstance(raw, dict) else None
+    if not (isinstance(gl, dict) and set(gl) == {"url", "token"}):
+        raise ConfigError("mr_state must be a map with gitlab: {url, token}")
+    u = urlparse(gl["url"]) if isinstance(gl["url"], str) else None
+    ok = u and (u.scheme == "https" or (u.scheme == "http" and u.hostname in _LOCAL))
+    if not (ok and u.hostname and u.username is None and u.password is None):
+        raise ConfigError("mr_state.gitlab.url must be https (http only for localhost)")
+    if not (isinstance(gl["token"], str) and re.fullmatch(r"keychain:\S+", gl["token"])):
+        raise ConfigError("mr_state.gitlab.token must be keychain:<service>")
+    return {"gitlab": dict(gl)}
+
+
 def validate_config(raw: dict) -> Config:
     """Pure: raw dict in, Config (with warnings) out. Raises ConfigError."""
     if not isinstance(raw, dict):
@@ -256,6 +274,10 @@ def validate_config(raw: dict) -> Config:
     agents = raw.get("agents_channel", "pipe-agents")
     if not isinstance(agents, str) or not agents:
         raise ConfigError("agents_channel must be a non-empty string")
+    work = raw.get("work_channel", "pipe-work")
+    if not isinstance(work, str) or not work:
+        raise ConfigError("work_channel must be a non-empty string")
+    mr_state = _mr_state(raw.get("mr_state"))
     allow = raw.get("allowlist", [])
     if not (
         isinstance(allow, list)
@@ -281,6 +303,8 @@ def validate_config(raw: dict) -> Config:
         agents_channel=agents,
         capabilities=caps,
         allowlist=allow,
+        work_channel=work,
+        mr_state=mr_state,
         **kw,
     )
 

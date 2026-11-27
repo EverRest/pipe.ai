@@ -62,6 +62,7 @@ The owner accepted the recommended option for each item below. Review them befor
 - 005 DQ4: there is no rate cap for a leaked trigger token. Remove the bot from the allowlist and rotate the token.
 - 006 DQ1: `hop ≤ 5` applies only when each adapter recomputes the template source from its own files. Otherwise the plan is `free` with `hop ≤ 3`.
 - 001: `upload_file` accepts only regular files in `~/.pipe/run/`, at most 10 MB.
+- Residual risk (004): the `.git` check does not cover the shared repo config under `.git/worktrees/`. Closing it is a separate task.
 
 ## 6. Open items
 

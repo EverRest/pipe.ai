@@ -309,6 +309,14 @@ class Stepper:
 
     def _exec(self, ts, i, claim_ts, hop) -> str:
         """Everything after the claim: input check, run, outcome. Also used by a resume."""
+        dirs: list[str] = []  # exec run dirs; removed on every exit, after the upload
+        try:
+            return self._exec_run(ts, i, claim_ts, hop, dirs)
+        finally:
+            for d in dirs:
+                shutil.rmtree(d, ignore_errors=True)
+
+    def _exec_run(self, ts, i, claim_ts, hop, dirs) -> str:
         v = View(ts)
         s, n = v.steps[i], len(v.steps)
         base = self._base(ts, i, hop, s["access"])
@@ -352,12 +360,19 @@ class Stepper:
             return fail(str(e) or "runtime failed")
         except LookupError:
             return fail("capability not available")
+        if run_dir := getattr(out, "run_dir", None):
+            dirs.append(run_dir)
         if out.status == "waiting" and out.reason == "needs_input":
             return self._ask(ts, v, i, claim_ts, base, out.text)
         if out.status == "failed":
+            try:  # logs and screenshots of a failure are posted too
+                files = getattr(out, "files", ())
+                links = self.upload_run_files(ts.channel, ts.thread_ts, files, s["goal"])
+            except UploadRefused:
+                return fail("upload refused")
             if s.get("on_fail") is not None:
                 return self._branch(ts, v, i, claim_ts, base)
-            return fail("run_failed")
+            return fail("run_failed", detail=" ".join(links) or None)
         if out.status != "done":  # also `delegate`: it starts nothing
             return fail(f"runtime status {out.status}")
         err = check_output(out, cap.output_schema)
@@ -373,9 +388,6 @@ class Stepper:
             arts += self.upload_run_files(ts.channel, ts.thread_ts, files, s["goal"])
         except UploadRefused:
             return fail("upload refused")
-        finally:  # ponytail: an early return before this point leaves the run dir behind
-            if run_dir := getattr(out, "run_dir", None):
-                shutil.rmtree(run_dir, ignore_errors=True)
         gate = s.get("gate") == "approval"
         extra = {}
         if out.proposal is not None:

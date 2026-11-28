@@ -33,9 +33,8 @@ A dialog answer needs a mention of the agent, so it arrives as `app_mention`. No
 | Item | Source |
 |---|---|
 | Bot scope `chat:write` | 005 |
-| Bot scope `pins:write` (pin the trigger card) | 005 |
 | No event subscription, no Socket Mode | 005 |
-| Token in a masked CI variable `PIPE_TRIGGER_TOKEN` | 005 FR-023 |
+| Token in a masked CI variable, for example `SLACK_TRIGGER_TOKEN` | 005 FR-023 |
 
 ### Other scopes (not Slack)
 
@@ -77,8 +76,7 @@ The core reads `owner`, `allowlist`, `work_channel`, `step_timeout_min`, and `di
 | `exposed` | list of capability IDs | `[]` | 002 |
 | `library_marketplaces` | list of marketplace names (letters, digits, `-`, `_`; 1 to 64 chars) | `[]` | 007 |
 | `tags` | map of capability ID to a list of tags | `{}` | 002 |
-| `allowlist` | list of `sender_id` values (bot or user IDs; Slack pattern `^[BUW][A-Z0-9]{2,}$`) | `[]` | 004, 005 |
-| `flows_dir` | str | `flows/` in the checkout | 006 |
+| `allowlist` | list of `sender_id` values (bot or user IDs; Slack pattern `^[BUWA][A-Z0-9]{2,}$`) | `[]` | 004, 005 |
 
 Skills, commands, and MCP servers of a plugin from a marketplace in `library_marketplaces` are `owner-only`, even when clean. Only an explicit `exposed` entry exposes them. The marketplace is the part after `@` in the plugin ID `<name>@<marketplace>`.
 
@@ -88,7 +86,6 @@ A declared capability entry has: `id`, `name`, `description`, `tags`, `access` (
 
 | Key | Type | Default | Spec |
 |---|---|---|---|
-| `runtime.name` | `claude`, `exec`, or `http` | `claude` | 003 |
 | `runtime.claude.owner_tools` | list | `[Read, Grep, Glob]` | 001 |
 | `runtime.claude.repo_roots` | list of paths | `[~/code]` | 001 |
 | `runtime.claude.deny_rules` | list | `[]`. `Bash(git push:*)` is always denied (`effective_deny_rules`) | 001 |
@@ -101,7 +98,6 @@ A declared capability entry has: `id`, `name`, `description`, `tags`, `access` (
 
 | Key | Type | Default | Spec |
 |---|---|---|---|
-| `mr_state.provider` | str | `gitlab` | 003 |
 | `mr_state.gitlab.url` | `https://` URL | unset (the metric prints `n/a`) | 003 |
 | `mr_state.gitlab.token` | `keychain:<service>` | unset | 003 |
 
@@ -132,9 +128,9 @@ A declared capability entry has: `id`, `name`, `description`, `tags`, `access` (
 | `~/.pipe/flows/<name>.yaml` | owner override of a flow template (wins by name) | 006 |
 | `flows/*.yaml`, `flows/tags.yaml` | shared templates and the tag vocabulary, in git | 006 |
 
-## 5. Environment variables of the trigger template (CI side, spec 005)
+## 5. Inputs of the trigger template (CI side, spec 005)
 
-`PIPE_TRIGGER_TOKEN` (masked), `PIPE_CHANNEL`, `PIPE_AGENT_USER_ID`, `PIPE_PIPELINE_FILE` (form A, a fixed pipeline) or `PIPE_FLOW` (form B, a flow name), and `PIPE_TRIGGER_TITLE`. Use one of `PIPE_PIPELINE_FILE` and `PIPE_FLOW`, never both.
+The template [gitlab-ci.yml](../templates/trigger/gitlab-ci.yml) passes values as flags of `post_trigger.py`: `--token-env`, `--channel`, `--agent`, `--title`, and one of `--flow` or `--pipeline-file`. Only the token is a variable (`SLACK_TRIGGER_TOKEN`, masked).
 
 ## 6. Reason codes
 

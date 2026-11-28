@@ -28,7 +28,7 @@ steps:                        # 1 to 6 entries
     agent: any                # any | $agent | $starter (human step only)
     capability: "tag:reproduce"   # tag:<tag> | tag:$<param>. Absent on a human step.
     access: read              # optional. Must equal the default access of the tag.
-    goal: "Write a failing test for: {goal}"   # 1 to 300 characters
+    goal: "Reply with a failing test for: {goal}"   # 1 to 300 characters
     payload: {}               # optional static object, at most 500 characters as JSON
     gate: approval            # optional. Only the value approval.
     exclude_agents_of: [implement]   # optional. Ids of EARLIER steps.

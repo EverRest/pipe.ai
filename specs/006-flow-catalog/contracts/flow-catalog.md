@@ -62,11 +62,11 @@ steps:
   - id: reproduce
     agent: any
     capability: "tag:reproduce"
-    goal: "Write a failing test that shows this bug: {goal}"
+    goal: "Reply with a failing test for this bug: target file path, test code, expected failure. Bug: {goal}"
   - id: implement
     agent: any
     capability: "tag:implement"
-    goal: "Fix the bug so that the failing test passes. Open an MR: {goal}"
+    goal: "Add the failing test from the reproduce reply. Fix the bug so that the test passes. Open an MR: {goal}"
   - id: e2e
     agent: any
     capability: "tag:e2e"

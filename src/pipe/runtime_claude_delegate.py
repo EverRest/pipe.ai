@@ -1,6 +1,7 @@
 """One `write` step: worktree, claude child, commit, push branch, MR link."""
 
 import os
+import re
 import subprocess
 import uuid
 from collections.abc import Callable, Sequence
@@ -20,6 +21,7 @@ from pipe.git_io import (
     push_branch,
     record_repo,
     worktree_add,
+    worktree_continue,
     worktree_remove,
 )
 from pipe.runtime_claude_cmd import _child_env, _payload, build_cmd, build_prompt
@@ -40,6 +42,18 @@ def pick_target(delegate_repos: dict, target: str | None) -> tuple[str | None, s
     if len(delegate_repos) == 1:
         return next(iter(delegate_repos.values())), None
     return None, "target_required"
+
+
+# only the name shape that `branch_name` makes; a path or a URL does not match
+_REQUESTED = re.compile(r"(?<![\w./-])pipe/\d+-\d+-s\d+(?:-\d+)?(?![\w/-])")
+
+
+def requested_branch(text: str) -> str | None:
+    """The one `pipe/` branch that the owner's request names, or None."""
+    names = set(_REQUESTED.findall(text))
+    if len(names) > 1:
+        raise RuntimeFailed("branch ambiguous")
+    return names.pop() if names else None
 
 
 def branch_name(task_id: str, step: int) -> str:
@@ -102,14 +116,26 @@ def run_write(
     st = map_request(req, cfg, caps, workdir=wt)
     if st.load.skipped:
         raise RuntimeFailed("capability not available")
-    if git.run(repo, ["fetch", "origin", base]).code:
-        raise RuntimeFailed("base not available")
     task = inp.task
-    branch = pick_branch(branch_name(task["id"], task.get("step", 0)), _existing(git, repo))
+    # `owner_request` is set only for a thread that the agent owner started
+    branch = requested_branch(task.get("owner_request") or "")
+    update = bool(branch)
+    if update:
+        spec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
+        if git.run(repo, ["fetch", "origin", spec]).code:
+            raise RuntimeFailed("branch not available")
+    else:
+        if git.run(repo, ["fetch", "origin", base]).code:
+            raise RuntimeFailed("base not available")
+        branch = pick_branch(branch_name(task["id"], task.get("step", 0)), _existing(git, repo))
+    head = "HEAD" if update else branch  # a continued branch is checked out detached
     goal = (task.get("pipeline") or {}).get("goal", "")
     run_dir = pipe_home() / "run" / run_id
     try:
-        worktree_add(git, repo, wt, branch, base)
+        if update:
+            worktree_continue(git, repo, wt, branch)
+        else:
+            worktree_add(git, repo, wt, branch, base)
         record_repo(wt, repo)
         pin = pin_worktree(wt)
         ls = st.load
@@ -135,10 +161,11 @@ def run_write(
         check_worktree(wt, pin)
         if not git.run(wt, ["status", "--porcelain"]).out.strip():
             raise RuntimeFailed("no changes")
-        if git.run(wt, ["rev-parse", "--abbrev-ref", "HEAD"]).out.strip() != branch:
+        if git.run(wt, ["rev-parse", "--abbrev-ref", "HEAD"]).out.strip() != head:
             raise RuntimeFailed("branch changed")
         commit_all(git, wt, commit_message(goal))
-        link = push_branch(git, wt, branch, base, scrub(goal.splitlines()[0] if goal else "pipe"))
+        title = scrub(goal.splitlines()[0] if goal else "pipe")
+        link = push_branch(git, wt, branch, base, title, update=update)
         if not link:
             raise RuntimeFailed("no merge request")
         return RuntimeOutput(text=esc(scrub(o.text)), status="done", artifacts=[scrub(link)])

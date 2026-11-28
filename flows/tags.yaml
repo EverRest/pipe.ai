@@ -14,7 +14,7 @@ tags:
     meaning: "Review a change (an MR). Return drafts or comments."
   reproduce:
     access: read
-    meaning: "Make a failing test that shows a bug."
+    meaning: "Return the code of a failing test that shows a bug."
   brainstorm:
     access: read
     meaning: "Discuss an idea with the people in the thread (a dialog)."

@@ -1,6 +1,7 @@
 """wiz-review wrapper for an exec capability. Stdlib only.
 
-stdin: effective payload JSON. stdout: one JSON result. Exit 0 also for a
+stdin: exec input JSON; the effective payload is in `payload`.
+stdout: one JSON result. Exit 0 also for a
 runtime `failed` status. Env: WIZ_REVIEW_URL, WIZ_REVIEW_TOKEN (never printed),
 WIZ_REVIEW_GITLAB_HOST (the only host a change link may use), optional
 WIZ_REVIEW_MAX_WAIT_S (default 3600).
@@ -117,6 +118,8 @@ def main(argv):
         payload = json.load(sys.stdin)
     except ValueError:
         payload = {}
+    # the exec runtime puts the step data under "payload"
+    payload = payload.get("payload") if isinstance(payload, dict) else None
     rc, out = run(payload if isinstance(payload, dict) else {}, os.environ)
     if rc:
         print(out["text"], file=sys.stderr)

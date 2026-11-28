@@ -69,7 +69,7 @@ Do not put a token in a file. Remove these commands from the shell history.
 A CI job uses this app to start a pipeline.
 
 1. Create a second app, for example `pipe-gitlab`.
-2. Add the bot scope `chat:write`. The reference also lists `pins:write`, but the script does not pin.
+2. Add the bot scope `chat:write`.
 3. Do not turn on events or Socket Mode.
 4. Install the app. Invite the bot to `pipe-work` and `pipe-agents`.
 5. Save the bot token as a masked CI/CD variable.
@@ -97,7 +97,6 @@ The example runs only for a schedule.
 - Give exactly one of `--flow <name>` or `--pipeline-file <file.json>`.
 - Give `--title`.
 
-The reference lists the variables `PIPE_TRIGGER_TOKEN`, `PIPE_CHANNEL`, `PIPE_AGENT_USER_ID`, `PIPE_FLOW`, `PIPE_PIPELINE_FILE`, and `PIPE_TRIGGER_TITLE`. The shipped template and script do not read them by name.
 
 To start with no button, add the bot ID of the trigger bot to `allowlist` of the agent.
 

@@ -38,9 +38,8 @@ def test_write_launcher(tmp_path):
     text = p.read_text()
     assert p.stat().st_mode & 0o777 == 0o700
     assert text.startswith("#!/bin/sh\n")
-    assert "exec /v/bin/python -m pipe.cli run\n" in text
+    assert 'exec /v/bin/python -m pipe.cli "$@"\n' in text
     assert "token" not in text.lower() and "xox" not in text
-    assert "$" not in text
 
 
 def test_launcher_path_has_claude_and_git_dirs(tmp_path, monkeypatch):
@@ -50,7 +49,7 @@ def test_launcher_path_has_claude_and_git_dirs(tmp_path, monkeypatch):
     launchd.write_launcher(p, python="/v/bin/python")
     lines = p.read_text().splitlines()
     assert lines[1] == "export PATH=/opt/x/bin:/usr/bin:/usr/local/bin:/opt/homebrew/bin:/bin"
-    assert lines[2] == "exec /v/bin/python -m pipe.cli run"
+    assert lines[-1] == 'exec /v/bin/python -m pipe.cli "$@"'
 
 
 def test_launcher_path_falls_back_when_not_found(tmp_path, monkeypatch):

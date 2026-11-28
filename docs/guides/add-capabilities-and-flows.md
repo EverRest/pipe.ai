@@ -209,7 +209,7 @@ Results:
 - Bad input, bad setup, or timeout: the step fails and starts no branch.
 
 The wrapper attaches `report.txt` and at most 5 screenshots.
-For a failed step, the thread message does not include the result text. Open the attached files.
-The next step cannot read the content of these files.
+For a failed step, the thread message includes the start of the result text, at most 2000 characters.
+The next step can read this text. It cannot read the content of the attached files.
 It removes common secret patterns from the report. It cannot remove secrets from screenshots.
 For screenshots, set `use.screenshot` to `only-on-failure` in the Playwright config.

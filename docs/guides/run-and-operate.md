@@ -52,7 +52,7 @@ At start, the adapter publishes its card, sends a summary DM to the owner, and r
 
 The install command writes these files:
 
-- `~/.pipe/bin/pipe`: a launcher for `pipe run`.
+- `~/.pipe/bin/pipe`: a launcher for `pipe`. The job starts it with `run`.
 - `~/Library/LaunchAgents/com.pipe-ai.adapter.plist`: the job. It starts at login and restarts after an exit.
 
 The launcher keeps the venv Python path and the directories of `claude` and `git` from the install time.
@@ -60,13 +60,16 @@ Install again after you move one of them.
 
 To restart, run `--remove`, then `--install`.
 
-The launcher passes only `PATH`. Variables of your shell do not reach the adapter.
+Variables of your shell do not reach the adapter. The launcher sets `PATH`.
+It also reads `~/.pipe/env` when the file exists. Put one `NAME=value` on each line, for example the variables in `env_allow`.
+The file is a shell script. Quote a value that has spaces. If it holds a token, run `chmod 600 ~/.pipe/env`.
+If you installed the job before, run `--remove`, then `--install`.
 
 ## 4. Session status hook
 
 Add the hooks to `~/.claude/settings.json` by hand. The adapter does not edit that file.
 
-**Use the venv command.** The launcher `~/.pipe/bin/pipe` ignores arguments and starts a second adapter.
+You can also use `~/.pipe/bin/pipe` in these commands.
 
 ```json
 {

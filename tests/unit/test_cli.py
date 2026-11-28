@@ -98,14 +98,17 @@ def test_metrics_uses_config_values():
 
     got = []
     cfg = NS(
-        work_channel="w", mr_state={"gitlab": {"url": "https://g.example", "token": "keychain:gl"}}
+        work_channel="w",
+        agents_channel="a",
+        mr_state={"gitlab": {"url": "https://g.example", "token": "keychain:gl"}},
     )
     mk = lambda url, tok: got.append((url, tok)) or "reader"  # noqa: E731
     assert _mr_state_reader(cfg, lambda svc: f"tok-{svc}", mk) == "reader"
     assert got == [("https://g.example", "tok-gl")]
     assert _mr_state_reader(NS(mr_state=None), None, None) is None
-    assert _metrics_args(cfg, ["--weeks", "1"]) == ["--channel", "w", "--weeks", "1"]
-    assert _metrics_args(cfg, ["--channel", "x"]) == ["--channel", "x"]
+    channels = ["--channel", "w", "--agents-channel", "a"]
+    assert _metrics_args(cfg, ["--weeks", "1"]) == [*channels, "--weeks", "1"]
+    assert _metrics_args(cfg, ["--channel", "x"]) == ["--agents-channel", "a", "--channel", "x"]
 
 
 def test_declared_http_gets_keychain_reader_and_never_prints_token(capsys):

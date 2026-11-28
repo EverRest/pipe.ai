@@ -29,12 +29,17 @@ def _path_value() -> str:
 
 
 def write_launcher(path, python=None) -> None:
-    """Shell script that runs the venv Python with a fixed PATH. No secrets."""
+    """Shell script that runs the venv Python with a fixed PATH. It holds no secrets.
+
+    launchd gives no shell environment, so it reads the owner's optional `env` file.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    env = shlex.quote(str(pipe_home() / "env"))
     path.write_text(
         f"#!/bin/sh\nexport PATH={shlex.quote(_path_value())}\n"
-        f"exec {shlex.quote(python or sys.executable)} -m pipe.cli run\n"
+        f"if [ -f {env} ]; then set -a; . {env}; set +a; fi\n"
+        f'exec {shlex.quote(python or sys.executable)} -m pipe.cli "$@"\n'
     )
     path.chmod(0o700)
 

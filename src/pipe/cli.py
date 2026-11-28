@@ -94,7 +94,8 @@ def _mr_state_reader(cfg, load_token, make):
 
 
 def _metrics_args(cfg, argv):
-    return argv if "--channel" in argv else ["--channel", cfg.work_channel, *argv]
+    pairs = (("--channel", cfg.work_channel), ("--agents-channel", cfg.agents_channel))
+    return [x for flag, val in pairs if flag not in argv for x in (flag, val)] + argv
 
 
 def _run_metrics(argv: list[str]) -> int:
@@ -107,6 +108,8 @@ def _run_metrics(argv: list[str]) -> int:
     from pipe.keychain import read_token
     from pipe.transport_slack import SlackTransport
 
+    if "-h" in argv or "--help" in argv:
+        return metrics_cli.main(argv, None)  # argparse prints the help and exits
     cfg = load_config()
     reader = SlackTransport(
         WebClient(token=read_token(cfg.slack_tokens.removeprefix("keychain:"), "bot")), scrub=scrub

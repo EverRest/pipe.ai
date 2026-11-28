@@ -1,7 +1,11 @@
 """bugfix: chat start, trigger start, failure stops the chain (US4)."""
 
-from flow_kit import FlowRig, meta
+import re
+
+from flow_kit import AGENTS, FLOWS, TAGS, FlowRig, done, meta
 from pipe.core.contract import RuntimeOutput
+from pipe.flows_io import load_flows
+from pipe.runtime_claude_cmd import build_prompt
 
 
 def test_chat_expand_has_five_steps_in_tag_order():
@@ -52,3 +56,30 @@ def test_missing_reproduce_tag_is_named():
     r = FlowRig(offers=offers)
     top = r.say("<@UA> flow:bugfix x")
     assert "flow bugfix: missing tags: reproduce" in r.texts(top)[-1]
+
+
+def test_no_shipped_read_step_asks_to_change_files():
+    writes = re.compile(
+        r"\b(write|make|add|change|fix)( a| an| the)?( failing)? (tests?|code)\b"
+        r"|\b(open|update) (an|the) mr\b",
+        re.I,
+    )
+    bad = [
+        (name, st["id"])
+        for name, flow in load_flows(FLOWS, FLOWS / "none", TAGS).items()
+        for st in flow.steps
+        if st["access"] == "read" and writes.search(st["goal"])
+    ]
+    assert not bad
+
+
+def test_implement_prompt_holds_the_whole_reproduce_reply():
+    reply = "def test_login():\n" + "    assert True\n" * 300 + "# END"
+    r = FlowRig()
+    for rt in r.rt.values():
+        rt.output = done(reply)
+    r.run_to_end("<@UA> flow:bugfix login fails")
+    (gate,) = [m for m in r.task() if meta(m)["status"] == "needs_approval" and meta(m).get("step")]
+    r.click(gate, AGENTS[meta(gate)["by"]][1], "pipe_accept")
+    inp = next(i for rt in r.rt.values() for i in rt.steps() if i.task["step"] == 1)
+    assert reply in build_prompt(inp.thread, inp.task)

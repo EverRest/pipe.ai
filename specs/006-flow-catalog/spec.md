@@ -134,7 +134,7 @@ A plan has a `source`: `template:<name>@<hash>` or `free`. Every adapter works o
 
 **Goal**: Fix a bug with a proof by test.
 
-**Steps**: `reproduce` (read, `tag:reproduce`: produces a failing test) → `implement` (write) → `e2e` (read) → `review` (read, `exclude_agents_of: [implement]`) → `approve` (human).
+**Steps**: `reproduce` (read, `tag:reproduce`: returns the code of a failing test in its reply) → `implement` (write: adds that test, fixes the bug, opens an MR) → `e2e` (read) → `review` (read, `exclude_agents_of: [implement]`) → `approve` (human).
 
 **Needed tags**: `reproduce`, `implement`, `e2e`, `review`.
 
@@ -142,9 +142,9 @@ A plan has a `source`: `template:<name>@<hash>` or `free`. Every adapter works o
 
 **Gates**: ✅ on the plan (or the trigger gate), the 004 gate for `implement`, the final approval button.
 
-**Artifacts**: the failing test (a link or a short text) from `reproduce`, the MR, the test report, the review drafts.
+**Artifacts**: the failing test code from the `reproduce` reply (target file path, test code, expected failure), the MR, the test report, the review drafts.
 
-**Failure and timeout**: when `reproduce` cannot make a failing test, it ends `failed` with a reason and a "Retry" button. The flow does not go on. This is the proof rule: no fix without a failing test.
+**Failure and timeout**: when `reproduce` cannot make a failing test, it ends `failed` with a reason and a "Retry" button. The flow does not go on. This is the proof rule: no fix without a failing test. `reproduce` does not run the test and does not change files. `implement` gets the full reply in the thread.
 
 **Acceptance test**: Expand `bugfix` with fake cards. Check 4 agent steps, the tags, the access values, and the exclusion. Post a trigger message whose text has `flow:bugfix`. Check the plan from the template and the trigger gate decision (allow or ask).
 

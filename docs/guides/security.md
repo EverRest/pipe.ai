@@ -32,6 +32,7 @@ A trigger plan from a bot that is not in `allowlist` also needs Accept.
 - Default deny rules: `Bash(git push:*)`, `Bash(git -C:*)`, `Bash(git -c:*)`, `Bash(env:*)`, `Bash(sh:*)`, `Bash(bash:*)`, `Bash(zsh:*)`. You can only add rules. A deny list is not a security guarantee.
 - The adapter denies edits in `.claude` directories.
 - The git commands of the adapter disable repository hooks.
+- A `write` step creates a new `pipe/` branch. It adds to an existing one only when the agent owner started the thread and the first message names that branch. Only the name shape that pipe makes is accepted. The push is never forced, so git accepts a fast-forward only. The adapter does not check who created that branch.
 - `upload_file` accepts only regular files in `~/.pipe/run/`, at most 10 MB.
 
 ## Secrets

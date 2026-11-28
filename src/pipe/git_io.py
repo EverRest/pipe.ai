@@ -69,6 +69,14 @@ def worktree_add(git, repo: str, path: str, branch: str, base: str) -> None:
         raise GitError("worktree failed")
 
 
+def worktree_continue(git, repo: str, path: str, branch: str) -> None:
+    """Detached checkout of the remote branch: no local branch moves."""
+    check_push_ref(branch, "")
+    ref = f"refs/remotes/origin/{branch}"
+    if git.run(repo, ["worktree", "add", "--detach", path, ref]).code:
+        raise GitError("worktree failed")
+
+
 def pin_worktree(wt: str) -> str:
     """Content of the `.git` file the adapter created (a `gitdir:` pointer)."""
     return (Path(wt) / ".git").read_text()
@@ -168,15 +176,25 @@ def mr_link(output: str, remote_url: str) -> str | None:
     return None
 
 
-def push_branch(git, wt: str, branch: str, base: str, title: str) -> str | None:
-    """Push one `pipe/` branch with MR options. Never base, never force."""
+def push_branch(
+    git, wt: str, branch: str, base: str, title: str, update: bool = False
+) -> str | None:
+    """Push one `pipe/` branch with MR options. Never base, never force.
+
+    `update` adds to an existing branch: a plain push, so git accepts a fast-forward only.
+    """
     check_push_ref(branch, base)
     url = git.run(wt, ["config", "--get", "remote.origin.url"]).out
     title = " ".join(title.split())[:MAX_TITLE_CHARS]
     ref = f"refs/heads/{branch}"
-    lease = f"--force-with-lease={ref}:"  # empty expected value: create only, never move
-    args = ["push", lease, "-o", "merge_request.create", "-o", f"merge_request.target={base}"]
-    r = git.run(wt, [*args, "-o", f"merge_request.title={title}", "origin", f"{ref}:{ref}"])
+    mr = ["-o", "merge_request.create", "-o", f"merge_request.target={base}"]
+    if update:  # keep the title of the open MR
+        args = ["push", *mr, "origin", f"HEAD:{ref}"]
+    else:
+        lease = f"--force-with-lease={ref}:"  # empty expected value: create only, never move
+        title_opt = ["-o", f"merge_request.title={title}"]
+        args = ["push", lease, *mr, *title_opt, "origin", f"{ref}:{ref}"]
+    r = git.run(wt, args)
     if r.code:
         raise GitError("push failed")
     return mr_link(r.out + "\n" + r.err, url)

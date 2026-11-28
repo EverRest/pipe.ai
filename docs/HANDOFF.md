@@ -1,5 +1,7 @@
 # Handoff: from specs to implementation
 
+> **Historical.** Specs 001 to 007 are now implemented. See [the README](../README.md) for the current state.
+
 Date: 2026-11-26. State: all six specs have spec, plan, research, data-model, contracts, quickstart, and tasks. The last full analyze pass found no open CRITICAL or HIGH item. No product code exists yet.
 
 ## 1. Read in this order

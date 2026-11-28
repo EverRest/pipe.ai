@@ -388,7 +388,6 @@ def test_mr_state_valid():
     gl = {"url": "https://git.example.com", "token": "keychain:gl"}
     c = cfg(work_channel="w", mr_state={"gitlab": gl})
     assert c.work_channel == "w" and c.mr_state == {"gitlab": gl}
-    assert cfg(mr_state={"gitlab": {**gl, "url": "http://localhost:8080"}}).mr_state
 
 
 @pytest.mark.parametrize(

@@ -34,6 +34,7 @@ class Config:
     status_channel: str = "pipe-status"
     model: str | None = None
     step_timeout_min: int = 30
+    dialog_timeout_h: int = 24
     warnings: tuple[str, ...] = ()
     exposed: list[str] = field(default_factory=list)
     tags: dict[str, list[str]] = field(default_factory=dict)
@@ -205,9 +206,8 @@ def _mr_state(raw) -> dict | None:
     if not (isinstance(gl, dict) and set(gl) == {"url", "token"}):
         raise ConfigError("mr_state must be a map with gitlab: {url, token}")
     u = urlparse(gl["url"]) if isinstance(gl["url"], str) else None
-    ok = u and (u.scheme == "https" or (u.scheme == "http" and u.hostname in _LOCAL))
-    if not (ok and u.hostname and u.username is None and u.password is None):
-        raise ConfigError("mr_state.gitlab.url must be https (http only for localhost)")
+    if not (u and u.scheme == "https" and u.hostname and u.username is None and u.password is None):
+        raise ConfigError("mr_state.gitlab.url must be https")
     if not (isinstance(gl["token"], str) and re.fullmatch(r"keychain:\S+", gl["token"])):
         raise ConfigError("mr_state.gitlab.token must be keychain:<service>")
     return {"gitlab": dict(gl)}
@@ -260,6 +260,9 @@ def validate_config(raw: dict) -> Config:
     timeout = raw.get("step_timeout_min", 30)
     if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
         raise ConfigError("step_timeout_min must be an integer >= 1")
+    dialog = raw.get("dialog_timeout_h", 24)
+    if isinstance(dialog, bool) or not isinstance(dialog, int) or not 1 <= dialog <= 168:
+        raise ConfigError("dialog_timeout_h must be an integer from 1 to 168")
     channel = raw.get("status_channel", "pipe-status")
     if not isinstance(channel, str) or not channel:
         raise ConfigError("status_channel must be a non-empty string")
@@ -303,6 +306,7 @@ def validate_config(raw: dict) -> Config:
         status_channel=channel,
         model=model,
         step_timeout_min=timeout,
+        dialog_timeout_h=dialog,
         warnings=warnings,
         exposed=exposed,
         library_marketplaces=lib,

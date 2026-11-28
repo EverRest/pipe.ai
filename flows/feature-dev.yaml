@@ -14,7 +14,7 @@ steps:
   - id: e2e
     agent: any
     capability: "tag:e2e"
-    goal: "Run the end-to-end tests on the branch. Attach the report and screenshots."
+    goal: "Run the end-to-end tests where the change is deployed. Attach the report and screenshots."
   - id: review
     agent: any
     capability: "tag:review"

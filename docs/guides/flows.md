@@ -168,7 +168,7 @@ The templates are in [flows/](../../flows/). The tag vocabulary is [flows/tags.y
 | Flow | Steps (tag) | Access of tags | Notes |
 |---|---|---|---|
 | `brainstorm` | context (`context`), brainstorm (`brainstorm`), summary (`summarize`) | read | |
-| `bugfix` | reproduce (`reproduce`), implement (`implement`), e2e (`e2e`), review (`review`), approve (human) | `implement` is write | Review excludes the implement agent. |
+| `bugfix` | reproduce (`reproduce`), implement (`implement`), e2e (`e2e`), review (`review`), approve (human) | `implement` is write | `reproduce` returns the test code in its reply. `implement` adds this test to the code. Review excludes the implement agent. |
 | `delegate` | implement (`implement`, named agent) | write | Needs a second agent mention. |
 | `feature-dev` | decompose (`decompose`, gate), implement (`implement`), e2e (`e2e`), review (`review`), approve (human) | `implement` is write | Review excludes the implement agent. |
 | `nightly` | check (`$check`), troubleshoot (`troubleshoot`) | read | Parameter `check`: `e2e` (default) or `deps-check`. `on_fail` goes to troubleshoot. |
@@ -177,6 +177,8 @@ The templates are in [flows/](../../flows/). The tag vocabulary is [flows/tags.y
 | `review-handoff` | review (`review`), implement (`implement`), re-review (`review`), approve (human) | `implement` is write | Re-review excludes the implement agent. |
 | `test-run` | e2e (`e2e`), troubleshoot (`troubleshoot`) | read | `on_fail` goes to troubleshoot. |
 | `troubleshoot` | collect (`collect`), diagnose (`diagnose`), implement (`implement`), approve (human) | `implement` is write | |
+
+For `review-handoff`, name the branch in your request, for example `pipe/1700000000-000100-s1`. Then `implement` adds to that MR. You must own the implementing agent and start the thread. Without a branch name, `implement` opens a new MR from the base branch.
 
 Start a flow with a top-level message: `@<agent> flow:<name> [key=value ...] <goal>`.
 Each tag of the flow needs an agent card that offers it.

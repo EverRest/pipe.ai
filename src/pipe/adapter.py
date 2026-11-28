@@ -81,6 +81,7 @@ class Adapter:
             "allowlist": getattr(cfg, "allowlist", ()),
             "tag_map": getattr(cfg, "tags", {}),
             "work_channel": cfg.work_channel,
+            "dialog_timeout_h": getattr(cfg, "dialog_timeout_h", 24),
             **(stepper_kw or {}),
         }
         self.stepper = Stepper(transport, runtime, self._state, self.caps, **kw)
@@ -443,16 +444,24 @@ class Adapter:
             reason = "internal error"
         return self._safe(f"I could not finish this task. Reason: {reason[:200]}.")
 
+    def _status_channel(self) -> str | None:
+        try:
+            return self.t.find_channel(self.cfg.status_channel)
+        except KeyError:
+            log.warning("status channel not found")
+            return None
+
     def _status(self) -> str:
-        ch = self.t.find_channel(self.cfg.status_channel)
+        ch = self._status_channel()
+        if not ch:
+            return "I cannot find the status channel."
         msgs = self.t.history(ch, oldest=str(time.time() - WEEK))
         return render_summary(recent(parse_status_messages(msgs), int(time.time())), self.esc)
 
     def catch_up(self) -> None:
         last = state.load_state().get("last_seen_ts") or "0"
-        chans = dict.fromkeys(
-            [*self.t.member_channels(), self.t.find_channel(self.cfg.status_channel)]
-        )
+        status = self._status_channel()
+        chans = dict.fromkeys([*self.t.member_channels(), *([status] if status else [])])
         missed: list[Message] = []
         for ch in chans:
             try:  # one broken channel must not starve the others

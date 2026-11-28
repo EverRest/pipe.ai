@@ -365,6 +365,8 @@ class Stepper:
             "pipeline": {"goal": s["goal"]},
             "payload": payload,
         }
+        if owner and ts.starter == owner:  # only the root message, which the owner wrote
+            task["owner_request"] = ts.parent_text
         try:
             out = self.rt.run(RuntimeInput(thread, task, req.requester_is_owner, req))
         except RuntimeFailed as e:
@@ -384,9 +386,10 @@ class Stepper:
                 links = self.upload_run_files(ts.channel, ts.thread_ts, files, s["goal"])
             except UploadRefused:
                 return fail("upload refused")
+            note = self._clean(out.text)[:2000]  # the next step reads it in the thread
             if s.get("on_fail") is not None:
-                return self._branch(ts, v, i, claim_ts, base)
-            return fail("run_failed", detail=" ".join(links) or None)
+                return self._branch(ts, v, i, claim_ts, base, note)
+            return fail("run_failed", detail=" ".join(filter(None, [note, *links])) or None)
         if out.status != "done":  # also `delegate`: it starts nothing
             return fail(f"runtime status {out.status}")
         err = check_output(out, cap.output_schema)
@@ -458,7 +461,7 @@ class Stepper:
         self._post(ts, f"{reply}\n{self._handoff_text(ts, v, nxt)}", p)
         self._schedule(ts, v, nxt, hop + 1)
 
-    def _branch(self, ts, v, i, claim_ts, base):
+    def _branch(self, ts, v, i, claim_ts, base, note=""):
         """The step ended `run_failed` and has `on_fail`: hand over to the branch step."""
         j, s = v.steps[i]["on_fail"], v.steps[v.steps[i]["on_fail"]]
         failed = {**base, "status": "failed", "reason": "run_failed"}
@@ -475,6 +478,8 @@ class Stepper:
         line = f"{text} {self._handoff_text(ts, v, j)}".replace(
             f"Step {j + 1}", "Branch: step " + str(j + 1), 1
         )
+        if note:
+            line = f"{note}\n{line}"
         self._post(ts, line, {**failed, "hop": base["hop"] + 1, "next": self._next(s, j)})
         self._schedule(ts, v, j, base["hop"] + 1)
         return "branched"

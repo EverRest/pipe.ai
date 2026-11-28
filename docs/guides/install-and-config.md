@@ -79,6 +79,7 @@ The source is [config.py](../../src/pipe/config.py).
 | `model` | model ID | not set |
 | `max_budget_usd` | number more than 0 | not set |
 | `step_timeout_min` | integer, 1 or more | `30` |
+| `dialog_timeout_h` | integer, 1 to 168 | `24` |
 | `status_channel` | text | `pipe-status` |
 | `work_channel` | text | `pipe-work` |
 | `agents_channel` | text | `pipe-agents` |
@@ -122,11 +123,6 @@ The source is [config.py](../../src/pipe/config.py).
 | `token` | `http` | `keychain:<service>` | not set |
 
 An unknown key in a declared entry is an error.
-
-### Keys that have no effect
-
-[docs/reference.md](../reference.md) lists `dialog_timeout_h`, `flows_dir`, `runtime.name`, and `mr_state.provider`.
-`config.py` does not read them. The dialog timeout is always 24 hours.
 
 ## Keychain
 

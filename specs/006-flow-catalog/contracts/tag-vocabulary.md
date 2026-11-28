@@ -30,7 +30,7 @@ Rules (`validate_tags(data) -> list[str]`):
 | `implement` | write | Change code in a separate worktree. The result is an MR. |
 | `e2e` | read | Run end-to-end tests on a branch or an environment. Return a report and screenshots. |
 | `review` | read | Review a change (an MR). Return drafts or comments. |
-| `reproduce` | read | Make a failing test that shows a bug. |
+| `reproduce` | read | Return the code of a failing test that shows a bug. |
 | `brainstorm` | read | Discuss an idea with the people in the thread (a dialog). |
 | `context` | read | Collect context from repos, docs, and MRs. |
 | `research` | read | Search the web, docs, and code for an answer. |

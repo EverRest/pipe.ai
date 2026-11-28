@@ -14,19 +14,13 @@ There is no server, database, or web UI. The project is an MVP experiment.
 >
 > **Not implemented:** spec 008. The release note and the real library repository of spec 007.
 
-### Known defects
-
-These items come from a read of the code.
+### Known limits
 
 | Item | Effect |
 |---|---|
-| The launcher that `pipe schedule --install` writes ignores its arguments. It always runs `pipe run`. | Do not use `~/.pipe/bin/pipe` for the status hook. It starts a second adapter. Use `<REPO>/.venv/bin/pipe`. |
-| `templates/review/wiz_review_capability.py` reads `mr_url` and `artifacts` at the top level of stdin. The `exec` runtime puts them under `payload`. | The wrapper fails with `missing change link`. The step shows `exit 2`. The wrapper does not work as shipped. |
-| `dialog_timeout_h` is in [the reference](docs/reference.md), but `config.py` does not read it. | The dialog timeout is always 24 hours. |
-| `flows_dir` and `runtime.name` are in the reference, but `config.py` does not read them. | These keys have no effect. |
-| The launchd launcher exports only `PATH`. | Variables in `env_allow` of an `exec` capability can be empty under launchd. |
-| A missing status channel is not handled at start. | `pipe run` stops with an error. |
-| The code has no handler for `message.channels`. | A subscription to that event does nothing. |
+| The code has no handler for `message.channels`. | Handoffs depend on `app_mention` for a bot message. Check this live first. |
+| An `e2e` run tests the deployed environment. It does not deploy or check out a branch. | Deploy the change first. A text goal cannot select the environment. |
+| A `write` step continues a branch only when the owner started the thread and the first message names one `pipe/<digits>-<digits>-s<n>` branch. | Else the step makes a new branch and a new MR. |
 
 ## Overview
 

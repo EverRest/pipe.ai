@@ -15,8 +15,10 @@ from pipe.git_io import (
     check_push_ref,  # noqa: F401 (re-export: the push guard lives with git)
     check_worktree,
     commit_all,
+    forget_repo,
     pin_worktree,
     push_branch,
+    record_repo,
     worktree_add,
     worktree_remove,
 )
@@ -109,6 +111,7 @@ def run_write(
     run_dir = pipe_home() / "run" / run_id
     try:
         worktree_add(git, repo, wt, branch, base)
+        record_repo(wt, repo)
         pin = pin_worktree(wt)
         ls = st.load
         prepared = None
@@ -145,3 +148,4 @@ def run_write(
     finally:
         cleanup(run_dir)
         worktree_remove(git, repo, wt)
+        forget_repo(wt)

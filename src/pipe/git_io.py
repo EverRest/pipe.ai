@@ -1,5 +1,6 @@
 """`git` wrapper for delegation (argv only, no shell). Not a core module."""
 
+import contextlib
 import os
 import re
 import shutil
@@ -88,6 +89,27 @@ def worktree_remove(git, repo: str, path: str) -> None:
     git.run(repo, ["worktree", "prune"])
 
 
+REPO_EXT = ".repo"  # record `<worktree>.repo` next to the worktree, never inside it
+
+
+def record_repo(wt: str, repo: str) -> None:
+    Path(wt + REPO_EXT).write_text(repo)
+
+
+def forget_repo(wt: str) -> None:
+    with contextlib.suppress(OSError):
+        os.unlink(wt + REPO_EXT)
+
+
+def _recorded_repo(wt: str) -> str | None:
+    """Source repo of an old worktree; None unless the record names an existing dir."""
+    try:
+        repo = Path(wt + REPO_EXT).read_text().strip()
+    except OSError:
+        return None
+    return repo if repo and os.path.isabs(repo) and os.path.isdir(repo) else None
+
+
 def sweep_worktrees(git, repo_roots, worktree_root: str, now: float, max_age: float = 86400):
     """Remove worktree dirs older than `max_age` s. Stays in the root, keeps branches."""
     root = os.path.realpath(worktree_root)
@@ -100,9 +122,15 @@ def sweep_worktrees(git, repo_roots, worktree_root: str, now: float, max_age: fl
             continue
         if not os.path.isdir(p) or now - os.stat(p).st_mtime < max_age:
             continue
-        for repo in repo_roots:
+        rec = _recorded_repo(p)
+        repos = [*repo_roots, *([rec] if rec and rec not in repo_roots else [])]
+        for repo in repos:
             git.run(repo, ["worktree", "remove", "--force", p])
+        if rec and rec not in repo_roots:
+            git.run(rec, ["worktree", "prune"])
         shutil.rmtree(p, ignore_errors=True)  # plain dir, or git could not remove it
+        with contextlib.suppress(OSError):
+            os.unlink(p + REPO_EXT)
     for repo in repo_roots:
         git.run(repo, ["worktree", "prune"])
 

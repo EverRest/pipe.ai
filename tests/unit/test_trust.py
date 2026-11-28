@@ -1,5 +1,5 @@
 from pipe.core.contract import Message
-from pipe.core.trust import hop_refused, trusted_cards, trusted_sender
+from pipe.core.trust import hop_refused, owner_thread, trusted_cards, trusted_sender
 
 
 def card(bot_id, user, name="n"):
@@ -69,3 +69,15 @@ def test_hop_refused():
     assert hop_refused(4, 3)
     assert not hop_refused(5, 5)
     assert hop_refused(6, 5)
+
+
+def test_owner_thread():
+    def m(*ids):
+        return [Message("C", "1", "1", i, False, "") for i in ids]
+
+    assert owner_thread(m("O", "ME"), "ME", "O")
+    assert owner_thread(m("ME"), "ME", "O")
+    assert not owner_thread(m("O", "BOT"), "ME", "O")
+    assert not owner_thread(m("O", "H"), "ME", "O")
+    assert not owner_thread(m("ME"), "ME", "")
+    assert not owner_thread(m("ME"), "ME", None)

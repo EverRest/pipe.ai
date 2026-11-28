@@ -16,6 +16,7 @@ from pipe.core.render import render_step, render_stop, render_trigger
 from pipe.core.route import TASK_EVENT, UNVERIFIED, View, card_view
 from pipe.core.runrequest import build_run_request
 from pipe.core.scrub import scrub
+from pipe.core.trust import owner_thread
 from pipe.runtime_select import check_input, check_output
 
 CLAIM_SETTLE_S = 2
@@ -332,8 +333,7 @@ class Stepper:
         step = Step(ts.self_id, s["access"], s["goal"], cap_id, payload, s.get("target"))
         owner = (ts.cards.get(ts.self_id) or {}).get("owner")
         # trust only the owner and this agent's own bot in the thread
-        owner_ok = bool(owner) and ts.starter == owner
-        owner_ok = owner_ok and all(m.sender_id in (ts.self_id, owner) for m in ts.messages)
+        owner_ok = ts.starter == owner and owner_thread(ts.messages, ts.self_id, owner)
         try:
             starter = ts.starter if owner_ok else None
             req = build_run_request(step, starter, owner, cap.output_schema)

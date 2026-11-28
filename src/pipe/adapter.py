@@ -41,6 +41,7 @@ from pipe.core.router import is_owner, should_handle
 from pipe.core.status import parse_status_messages, recent, render_summary
 from pipe.core.summary import build_summary
 from pipe.core.trigger import decide_trigger
+from pipe.core.trust import owner_thread
 from pipe.flows_io import load_default
 from pipe.owner_summary import send_summary
 from pipe.planner import PlanResult, plan
@@ -403,8 +404,8 @@ class Adapter:
         msgs = self.t.replies(e.channel, e.thread_ts)
         thread = [{"user": m.sender_handle or m.sender_id, "text": m.text} for m in msgs]
         # Tools only if the trigger and the whole thread are owner or this agent's own bot.
-        owner_only = is_owner(e.sender_id, self.cfg.owner) and all(
-            m.sender_id == self.agent_id or is_owner(m.sender_id, self.cfg.owner) for m in msgs
+        owner_only = is_owner(e.sender_id, self.cfg.owner) and owner_thread(
+            msgs, self.agent_id, self.cfg.owner
         )
         inp = RuntimeInput(
             thread,

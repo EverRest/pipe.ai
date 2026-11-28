@@ -6,6 +6,11 @@ from pipe.core.claim import ts_key
 CARD_EVENT = "pipe.card.v1"
 
 
+def owner_thread(messages, self_id: str, owner: str | None) -> bool:
+    """True only for a non-empty owner and every sender being `self_id` or `owner`."""
+    return bool(owner and all(m.sender_id in (self_id, owner) for m in messages))
+
+
 def trusted_cards(messages) -> dict[str, dict]:
     """bot_id -> card payload. Keeps only cards a bot posted about itself.
     One bot, two cards: the latest wins. One bot_user_id on two cards: the lowest ts keeps it."""

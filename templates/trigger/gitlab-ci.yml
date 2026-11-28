@@ -12,5 +12,5 @@ post-trigger:
       --token-env SLACK_TRIGGER_TOKEN
       --channel "<CHANNEL_ID>"
       --agent "<AGENT_USER_ID>"
-      --flow review
+      --flow review-handoff
       --title "Review the open MR"

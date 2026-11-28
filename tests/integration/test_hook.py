@@ -150,3 +150,14 @@ def test_default_call_slack_timeout(monkeypatch):
 def test_no_slack_sdk_imports():
     src = Path(hook.__file__).read_text() + Path(http.__file__).read_text()
     assert not re.search(r"^\s*(import|from) slack_(bolt|sdk)", src, re.M)
+
+
+def test_branch_token_scrubbed(monkeypatch):
+    monkeypatch.setattr(
+        hook, "_git", lambda cwd, *a: "xoxb-123456789-abcdefgh" if "--abbrev-ref" in a else ""
+    )
+    f = FakeCallSlack()
+    run("Stop", f)
+    p = f.calls[0][1]
+    assert "xoxb-" not in p["text"] and "[redacted]" in p["text"]
+    assert "xoxb-" not in p["metadata"]["event_payload"]["branch"]

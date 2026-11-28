@@ -145,3 +145,32 @@ def test_check_worktree_detects_rewritten_git_file(tmp_path):
     (tmp_path / ".git").write_text("gitdir: /evil\n")
     with pytest.raises(GitError, match="worktree git metadata changed"):
         check_worktree(str(tmp_path), pin)
+
+
+@pytest.mark.parametrize(
+    "out",
+    [
+        "remote: https://user:tok@git.example.com/a/-/merge_requests/1",  # userinfo
+        "remote: https://git.example.com:8443/a/-/merge_requests/1",  # port
+        "remote: http://git.example.com/a/-/merge_requests/1",  # not https
+        "remote: https://git.example.com.evil.org/a/-/merge_requests/1",  # lookalike host
+    ],
+)
+def test_mr_link_refuses_userinfo_port_scheme_and_lookalike(out):
+    from pipe import git_io
+
+    assert git_io.mr_link(out, "https://git.example.com") is None
+
+
+def test_mr_link_non_string_is_none():
+    from pipe import git_io
+
+    assert git_io.mr_link(None, "https://git.example.com") is None
+    assert git_io.mr_link("x", None) is None
+
+
+def test_mr_link_keeps_a_clean_link():
+    from pipe import git_io
+
+    out = "remote: https://git.example.com/a/-/merge_requests/9"
+    assert git_io.mr_link(out, "https://git.example.com") == out.split()[-1]

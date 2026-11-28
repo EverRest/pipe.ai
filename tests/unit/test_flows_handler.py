@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace as NS
 
 from pipe.cli import main, make_flows_handler
@@ -56,3 +57,14 @@ def test_import_error_prints_not_installed(capsys, monkeypatch):
     monkeypatch.setattr(cli, "_default_load", boom)
     assert main(["flows"]) == 1
     assert "flows: not installed" in capsys.readouterr().out
+
+
+def test_flows_list_reads_pipe_home_override(tmp_path, monkeypatch, capsys):
+    import pipe.cli as cli
+
+    monkeypatch.setenv("PIPE_HOME", str(tmp_path))
+    (tmp_path / "flows").mkdir()
+    text = Path("flows/review-handoff.yaml").read_text()
+    (tmp_path / "flows" / "mine.yaml").write_text(text.replace("review-handoff", "mine", 1))
+    assert cli.main(["flows"]) == 0
+    assert "mine" in capsys.readouterr().out

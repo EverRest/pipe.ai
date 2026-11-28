@@ -28,6 +28,29 @@ def find_link(payload):
     return None
 
 
+MR_PATH = re.compile(r"^/[A-Za-z0-9_.~/-]+/merge_requests/[0-9]+$")
+
+
+def clean_link(link, host):
+    """Return a rebuilt https MR link on `host`, or None.
+
+    Refuse backslash, userinfo, whitespace, control characters, a port, and any
+    path that is not a merge request. Send only the rebuilt link, never the raw one.
+    """
+    if not isinstance(link, str) or re.search(r"[\\\s\x00-\x1f\x7f@]", link):
+        return None
+    try:
+        u = urllib.parse.urlparse(link)
+        port = u.port
+    except ValueError:
+        return None
+    if u.scheme != "https" or u.username or u.password or port is not None:
+        return None
+    if not u.hostname or u.hostname != host.lower() or not MR_PATH.match(u.path):
+        return None
+    return urllib.parse.urlunparse(("https", u.hostname, u.path, "", "", ""))
+
+
 def scrub(s, token=""):
     s = s.replace(token, "[redacted]") if token else s
     return SECRET.sub("[redacted]", s)
@@ -60,7 +83,8 @@ def run(payload, env, http=http_json, sleep=time.sleep, now=time.monotonic):
     link = find_link(payload)
     if not link:
         return fail(2, "missing change link")
-    if urllib.parse.urlparse(link).hostname != env["WIZ_REVIEW_GITLAB_HOST"].lower():
+    link = clean_link(link, env["WIZ_REVIEW_GITLAB_HOST"])
+    if not link:
         return fail(2, "change link is not on the GitLab host")
     q = f"{base}/reviews?url={urllib.parse.quote(link, safe='')}"
     deadline = now() + int(env.get("WIZ_REVIEW_MAX_WAIT_S") or 3600)

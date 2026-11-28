@@ -148,9 +148,22 @@ def _host(url: str) -> str | None:
 
 
 def mr_link(output: str, remote_url: str) -> str | None:
-    """First https MR link whose host equals the origin host."""
+    """First https MR link whose host equals the origin host.
+
+    Refuse a link with userinfo (it can hold a token) or an explicit port.
+    """
+    if not isinstance(output, str) or not isinstance(remote_url, str):
+        return None
+    host = _host(remote_url.strip())
     for m in LINK_RE.finditer(output):
-        if urlparse(m[0]).hostname == _host(remote_url.strip()):
+        u = urlparse(m[0])
+        try:
+            port = u.port
+        except ValueError:
+            continue
+        if u.scheme != "https" or u.username or u.password or port is not None:
+            continue
+        if u.hostname == host:
             return m[0]
     return None
 

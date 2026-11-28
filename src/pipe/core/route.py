@@ -9,7 +9,8 @@ from typing import Any
 from pipe.core.claim import claim_excluded, resolve_claim, ts_key
 from pipe.core.contract import ClickEvent, MentionEvent, ReactionEvent
 from pipe.core.gate import step_rejected
-from pipe.core.pipeline import Pipeline, Step, matches_tag
+from pipe.core.pipeline import _TAG, Pipeline, Step, matches_tag
+from pipe.core.render import UNVERIFIED
 from pipe.core.router import should_handle
 from pipe.core.source import effective_source, hop_limit, parse_source
 from pipe.core.trigger import is_trigger_card, parse_trigger
@@ -17,10 +18,8 @@ from pipe.core.trust import hop_refused, trusted_sender
 
 TASK_EVENT = "pipe.task.v1"
 CHECK = "white_check_mark"
-UNVERIFIED = " (plan source not verified)"
 _STATUS = ("needs_approval", "claimed", "running", "waiting", "done", "failed")
 _NAME = re.compile(r"[a-z0-9-]{1,32}")
-_TAG = re.compile(r"tag:([a-z0-9-]{1,32})")
 _MENTION = re.compile(r"<@([A-Z0-9]+)>")
 _STEP_FIELDS = {f.name for f in fields(Step)}
 _NOT_CLAIM = ("owner offline", "no_claimer")  # posted by the handoff sender

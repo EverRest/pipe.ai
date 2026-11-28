@@ -91,6 +91,7 @@ class ClickEvent:
     message_ts: str
     sender_id: str
     action_id: str
+    thread_ts: str | None = None  # from the Slack payload; None when unknown
 
 
 @dataclass(frozen=True)

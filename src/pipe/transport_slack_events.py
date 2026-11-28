@@ -43,6 +43,8 @@ def register_handlers(app, emit: Callable) -> None:
                 body["message"]["ts"],
                 body["user"]["id"],
                 body["actions"][0]["action_id"],
+                (body.get("message") or {}).get("thread_ts")
+                or (body.get("container") or {}).get("thread_ts"),
             )
         )
 

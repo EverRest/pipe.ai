@@ -3,7 +3,6 @@
 import argparse
 import contextlib
 import sys
-from pathlib import Path
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -120,10 +119,8 @@ def _default_load():
     """Return (flows, errors) from the flow files. Import is deferred (spec 006 modules)."""
     from pipe import flows_io
 
-    shared = Path(__file__).resolve().parents[2] / "flows"
-    vocab = flows_io.load_tags(shared / "tags.yaml")
     errors: list[str] = []
-    flows = flows_io.load_flows(shared, Path("~/.pipe/flows").expanduser(), vocab, errors=errors)
+    flows = flows_io.load_default(errors)
     return flows, errors
 
 

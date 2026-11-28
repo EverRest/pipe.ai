@@ -166,3 +166,11 @@ def test_card_refuses_invalid(monkeypatch, capsys):
     assert pt.main(bad, http=http) == 1
     assert not [c for c in http.calls if c[0] == "chat.postMessage"]
     assert TOKEN not in capsys.readouterr().err
+
+
+def test_yml_flow_names_are_flow_files():
+    text = (ROOT / "templates/trigger/gitlab-ci.yml").read_text()
+    names = re.findall(r"--flow\s+(\S+)", text)
+    assert names
+    for name in names:
+        assert (ROOT / "flows" / f"{name}.yaml").is_file(), name

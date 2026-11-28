@@ -11,6 +11,7 @@ from pathlib import Path
 
 from pipe import state
 from pipe.config import load_config
+from pipe.core.scrub import scrub
 from pipe.keychain import read_token
 from pipe.transport_slack_http import call_slack as http_call
 from pipe.transport_slack_map import escape_mentions
@@ -79,9 +80,11 @@ def _run(event: str, data: dict, call_slack) -> None:
             "%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)
         )
         repo = _git(cwd, "rev-parse", "--show-toplevel") or cwd
-        repo = escape_mentions(Path(repo).name)
-        branch = escape_mentions(_git(cwd, "rev-parse", "--abbrev-ref", "HEAD")) if cwd else ""
-        who = escape_mentions(cfg.agent_name)
+        repo = escape_mentions(scrub(Path(repo).name))
+        branch = (
+            escape_mentions(scrub(_git(cwd, "rev-parse", "--abbrev-ref", "HEAD"))) if cwd else ""
+        )
+        who = escape_mentions(scrub(cfg.agent_name))
         payload = {
             "v": 1,
             "session_id": sid,

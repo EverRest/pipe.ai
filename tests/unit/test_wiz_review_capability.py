@@ -173,3 +173,31 @@ def test_token_in_header_only_never_printed(capsys, monkeypatch):
     monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps(MR)))
     assert w.main([]) == 0
     assert TOKEN not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "https://gitlab.example\\@evil.example/g/p/-/merge_requests/1",  # backslash differential
+        "https://gitlab.example@evil.example/g/p/-/merge_requests/1",  # userinfo
+        "https://user:pw@gitlab.example/g/p/-/merge_requests/1",  # userinfo, right host
+        "https://gitlab.example:8443/g/p/-/merge_requests/1",  # port
+        "https://gitlab.example/g/p/-/merge_requests/1 \nX: y",  # whitespace and control
+        "https://gitlab.example/g/p/-/issues/1",  # not a merge request
+        "http://gitlab.example/g/p/-/merge_requests/1",  # not https
+    ],
+)
+def test_tricky_links_are_refused_without_request(link):
+    h = Http(["none"])
+    (rc, out), _ = go({"mr_url": link}, h)
+    assert rc == 2 and not h.calls
+
+
+def test_only_the_rebuilt_link_is_sent():
+    h = Http(["none", "ready"])
+    link = "https://GitLab.Example/g/p/-/merge_requests/7?x=1#frag"
+    (rc, _), _ = go({"mr_url": link}, h)
+    assert rc == 0
+    sent = " ".join(str(c[1]) + str(c[3]) for c in h.calls)
+    assert "x%3D1" not in sent and "frag" not in sent
+    assert "https%3A%2F%2Fgitlab.example%2Fg%2Fp%2F-%2Fmerge_requests%2F7" in sent

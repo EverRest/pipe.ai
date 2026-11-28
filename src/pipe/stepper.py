@@ -44,15 +44,18 @@ class Stepper:
         dialog_timeout_h: int = 24,
         allowlist=(),
         tag_map: dict | None = None,
+        work_channel: str = "pipe-work",
     ):
         """`load(channel, thread_ts)` gives a fresh `ThreadState`. `caps` are the exposed
         capabilities of this agent. `timer(seconds, fn)` is an injected factory.
         `allowlist` comes from the config; the owner is the card owner (spec 004).
-        `tag_map` is the config tag map: the same tags the card publishes."""
+        `tag_map` is the config tag map: the same tags the card publishes.
+        `work_channel` is the config work channel name."""
         self.t, self.rt, self.load, self.caps = transport, runtime, load, caps
         self.sleep, self.timer, self.settle_s = sleep, timer, settle_s
         self.step_timeout_min, self.dialog_timeout_h = step_timeout_min, dialog_timeout_h
         self.allowlist = tuple(allowlist)
+        self.work_channel = work_channel
         self.tag_map = dict(tag_map or {})
         self._seen: set[str] = set()
 
@@ -482,7 +485,11 @@ class Stepper:
         head = render_step(
             i, n, s["access"], self._name(ts), "waiting", escape=self.t.escape_mentions
         )
-        who = self.t.mention(ts.starter) + " " if ts.starter else ""
+        # a bot starter (trigger thread) has no mention: ping the card owner instead
+        starter = ts.starter
+        if starter and (starter in ts.cards or starter.startswith("B")):
+            starter = v.owner(ts.self_id)
+        who = self.t.mention(starter) + " " if starter else ""
         me = self.t.mention(ts.self_handle)
         ask = f"{self._clean(question)} Answer in this thread and mention {me}."
         text = f"{who}{head} for input. {ask}"
@@ -508,7 +515,7 @@ class Stepper:
         return self._exec(ts, p["step"], q[0].ts, p["hop"])
 
     def expire_dialog(self, thread_ts, ts_, channel=None):
-        ts, q = self._question(channel or self.t.find_channel("pipe-work"), thread_ts, ts_)
+        ts, q = self._question(channel or self.t.find_channel(self.work_channel), thread_ts, ts_)
         if q:
             p = q[1]
             base = self._base(ts, p["step"], p["hop"], p["access"])
@@ -554,7 +561,7 @@ class Stepper:
 
     def check_unclaimed(self, thread_ts, i, hop, channel=None):
         """Timer fired: no claim yet. Fixed agent: `owner offline`. Tag step: `no_claimer`."""
-        ts = self.load(channel or self.t.find_channel("pipe-work"), thread_ts)
+        ts = self.load(channel or self.t.find_channel(self.work_channel), thread_ts)
         v = View(ts)
         if any(p["status"] != "failed" for _, p in v.claims[i]) or v.rejected(i):
             return

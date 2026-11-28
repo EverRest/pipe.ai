@@ -80,6 +80,7 @@ class Adapter:
         kw = {
             "allowlist": getattr(cfg, "allowlist", ()),
             "tag_map": getattr(cfg, "tags", {}),
+            "work_channel": cfg.work_channel,
             **(stepper_kw or {}),
         }
         self.stepper = Stepper(transport, runtime, self._state, self.caps, **kw)
@@ -90,6 +91,7 @@ class Adapter:
         seen = state.load_seen()
         self.event_ids, self.keys = seen["event_ids"], seen["mention_keys"]
         self.in_flight: set[str] = set()
+        self._lock = threading.Lock()  # guards in_flight check-and-add and threads writes
         self.submit: Callable = lambda f, *a: f(*a)  # run_forever swaps in one worker thread
         self.agent_id = ""
 
@@ -98,13 +100,22 @@ class Adapter:
 
     # Receipt: decide, then mark in flight (memory only).
     def _accept(self, e: MentionEvent, who: str = ""):
-        d = should_handle(
-            e, who or self.agent_id, self.t.mention, self.event_ids, self.keys, self.in_flight
-        )
-        if d.action == "ignore":
-            return None
-        self.in_flight.update({f"{e.channel}:{e.ts}", *([e.event_id] if e.event_id else [])})
+        with self._lock:
+            d = should_handle(
+                e, who or self.agent_id, self.t.mention, self.event_ids, self.keys, self.in_flight
+            )
+            if d.action == "ignore":
+                return None
+            self.in_flight.update({f"{e.channel}:{e.ts}", *([e.event_id] if e.event_id else [])})
         return d
+
+    def _claim(self, keys: set[str]) -> bool:
+        """Take `keys` in one step unless one is in flight. Bolt threads and worker race here."""
+        with self._lock:
+            if keys & self.in_flight:
+                return False
+            self.in_flight |= keys
+            return True
 
     # --- stage 003: thread state, routing, decisions
     def _cards(self) -> dict:
@@ -118,8 +129,9 @@ class Adapter:
 
     def _state(self, channel: str, thread_ts: str) -> ThreadState:
         msgs = tuple(self.t.replies(channel, thread_ts))
-        for m in msgs:
-            self.threads[(channel, m.ts)] = m.thread
+        with self._lock:
+            for m in msgs:
+                self.threads[(channel, m.ts)] = m.thread
         parent = next((m for m in msgs if m.ts == thread_ts), None)
         cards = self._cards()
         users = self.cards.agent_users() if self.cards else {}
@@ -178,7 +190,10 @@ class Adapter:
         elif isinstance(e, ReactionEvent | ClickEvent):
             if e.event_id and (e.event_id in self.event_ids or e.event_id in self.in_flight):
                 return None
-            thread = self._thread_of(e.channel, getattr(e, "item_ts", None) or e.message_ts)
+            known = e.thread_ts if isinstance(e, ClickEvent) else None
+            thread = known or self._thread_of(
+                e.channel, getattr(e, "item_ts", None) or e.message_ts
+            )
         else:
             return None
         if not thread:
@@ -194,9 +209,8 @@ class Adapter:
         if d.reason == "not_owner":
             log.info("gate click ignored: not the owner")
         keys = self._keys(e, d, e.channel)
-        if d.action == "ignore" or keys & self.in_flight:
+        if d.action == "ignore" or not self._claim(keys):
             return None
-        self.in_flight |= keys
         return self._run, e, d, keys, (e.channel, thread)
 
     def on_event(self, e) -> None:
@@ -383,9 +397,8 @@ class Adapter:
                 w = Wake(p.ts, time.time())
                 for d in wake_all(w, self._state(ch, p.ts)):
                     keys = self._keys(w, d, ch)
-                    if keys & self.in_flight:
+                    if not self._claim(keys):
                         continue
-                    self.in_flight |= keys
                     self._run(w, d, keys, (ch, p.ts))
             except Exception:
                 log.exception("wake failed for %s", p.ts)

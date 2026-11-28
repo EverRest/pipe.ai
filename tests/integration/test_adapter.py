@@ -3,7 +3,7 @@ import time
 from fakes import FakeRuntime, FakeTransport
 from pipe import adapter, state
 from pipe.config import Config
-from pipe.core.contract import MentionEvent, RuntimeOutput
+from pipe.core.contract import ClickEvent, MentionEvent, RuntimeOutput
 from pipe.core.scrub import scrub
 
 CH = "C1"
@@ -137,3 +137,48 @@ def test_owner_tools_on_when_thread_is_owner_and_own_bot_only():
     m = t.add_message(CH, "<@B1> hi", sender_id="U_OWNER", thread=p.ts)
     t.raise_event(MentionEvent(CH, m.ts, m.thread, "U_OWNER", False, m.text, "E9"))
     assert a.agent_id and r.inputs[0].requester_is_owner is True
+
+
+def _scan_counter(monkeypatch, t):
+    scans = []
+    real = t.history
+
+    def history(*a, **kw):
+        scans.append(1)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(t, "history", history)
+    return scans
+
+
+def test_click_with_thread_ts_makes_no_parent_scan(monkeypatch):
+    a, t, _ = make()
+    scans = _scan_counter(monkeypatch, t)
+    a._decide(ClickEvent(None, CH, "9.9", "U_OWNER", "pipe_approve", thread_ts="1.1"))
+    assert scans == []
+
+
+def test_click_without_thread_ts_falls_back_to_scan(monkeypatch):
+    a, t, _ = make()
+    parent = t.add_message(CH, "x", sender_id="U_OWNER")
+    scans = _scan_counter(monkeypatch, t)
+    a._decide(ClickEvent(None, CH, parent.ts, "U_OWNER", "pipe_approve"))
+    assert scans
+
+
+def test_claim_lets_one_thread_win(monkeypatch):
+    import threading
+
+    a, _, _ = make()
+    wins, barrier = [], threading.Barrier(8)
+
+    def race():
+        barrier.wait()
+        wins.append(a._claim({"k"}))
+
+    ths = [threading.Thread(target=race) for _ in range(8)]
+    for th in ths:
+        th.start()
+    for th in ths:
+        th.join()
+    assert wins.count(True) == 1 and a._claim({"k"}) is False

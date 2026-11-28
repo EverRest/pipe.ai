@@ -22,6 +22,7 @@ from pipe.git_io import (
     worktree_add,
     worktree_remove,
 )
+from pipe.runtime_claude_cmd import _child_env, _payload, build_cmd, build_prompt
 from pipe.runtime_claude_discovery import read_mcp_entries
 from pipe.runtime_claude_load import cleanup
 from pipe.runtime_claude_load import prepare as _prepare
@@ -88,8 +89,6 @@ def run_write(
     home: Path | None = None,
 ) -> RuntimeOutput:
     """Raises RuntimeFailed(<fixed reason>). The worktree is always removed."""
-    from pipe.runtime_claude import _child_env, _payload, build_cmd, build_prompt  # no import cycle
-
     req = inp.request
     path, reason = pick_target(getattr(cfg, "delegate_repos", None) or {}, req.target)
     repo = None if reason else resolve_repo(path, cfg.repo_roots)

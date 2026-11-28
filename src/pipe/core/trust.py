@@ -1,9 +1,7 @@
 """Trust in senders and cards. Pure. Thread text is untrusted."""
 
-from pipe.core.card import validate_card
+from pipe.core.card import CARD_EVENT, validate_card
 from pipe.core.claim import ts_key
-
-CARD_EVENT = "pipe.card.v1"
 
 
 def owner_thread(messages, self_id: str, owner: str | None) -> bool:

@@ -71,3 +71,18 @@ def test_reconnect_on_hello_only():
     listener(c, {"type": "events_api"}, "")
     listener(c, {"type": "hello"}, "")
     assert calls == [1]
+
+
+def test_click_reads_thread_ts_from_message_or_container():
+    app, got = setup()
+    base = {
+        "channel": {"id": "C1"},
+        "user": {"id": "U2"},
+        "actions": [{"action_id": "approve"}],
+        "trigger_id": "T1",
+    }
+    app.h["action"](ack=lambda: None, body={**base, "message": {"ts": "2.2", "thread_ts": "1.1"}})
+    app.h["action"](
+        ack=lambda: None, body={**base, "message": {"ts": "3.3"}, "container": {"thread_ts": "1.1"}}
+    )
+    assert [c.thread_ts for c in got] == ["1.1", "1.1"]

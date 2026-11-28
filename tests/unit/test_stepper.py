@@ -497,3 +497,19 @@ def test_timer_fires_no_claimer_for_tag_step():
     assert secs == 30 * 60
     fire()
     assert meta(r.last_post())["reason"] == "no_claimer"
+
+
+def test_work_channel_is_configured():
+    r = Rig(work_channel="team-work")
+    r.ft.channels = {"team-work": "C"}  # no "pipe-work" here: a lookup of it would fail
+    r.st.check_unclaimed(TOP, 0, 1)
+    assert meta(r.last_post())["reason"] == "owner offline"
+
+
+def test_dialog_question_in_trigger_thread_mentions_owner():
+    r = Rig(seed=[first_handoff()], out=RuntimeOutput("Q?", status="waiting", reason="needs_input"))
+    msgs = lambda: tuple(m for m in r.ft.messages if m.thread == TOP)  # noqa: E731
+    r.st.load = lambda channel, thread: state(msgs(), me="B1", starter="B9")  # bot starter
+    r.st.run_step(r.ev(first_handoff()), 0)
+    text = r.ft.updates[-1]["text"]
+    assert "<@OA>" in text and "<@B9>" not in text

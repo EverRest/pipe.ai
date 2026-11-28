@@ -3,6 +3,7 @@
 from pipe.core.scrub import scrub
 
 MAX_REASON = 200
+UNVERIFIED = " (plan source not verified)"
 
 
 def _clean(s: str, escape) -> str:
@@ -23,9 +24,7 @@ def render_step(
 
 
 def render_stop(unverified: bool = False) -> str:
-    return "Stopped. Reason: hop limit exceeded" + (
-        " (plan source not verified)" if unverified else ""
-    )
+    return "Stopped. Reason: hop limit exceeded" + (UNVERIFIED if unverified else "")
 
 
 def render_trigger(

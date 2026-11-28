@@ -1,0 +1,26 @@
+# Example owner config for the e2e capability. Placeholders only.
+# Copy e2e.example.json to ~/.pipe/e2e.json and edit it. It holds the URL allowlist.
+# The branch must be deployed to the environment before the step runs.
+tags:
+  exec:e2e: [e2e]
+exposed: [exec:e2e]   # owner-only until listed here
+capabilities:
+  - id: e2e
+    name: e2e
+    description: Run the Playwright tests against a deployed environment. It does not test a branch.
+    access: read
+    runtime: exec
+    command:
+      - /ABSOLUTE/PATH/TO/python3
+      - /ABSOLUTE/PATH/TO/e2e_capability.py
+      - /ABSOLUTE/PATH/TO/e2e.json
+    env_allow: [HOME]
+    timeout_s: 600   # must be larger than timeout_s in e2e.json
+    input_schema:
+      type: object
+      properties:
+        env: { type: string, maxLength: 32 }
+        filter: { type: string, maxLength: 100 }
+        context: { type: array }
+        artifacts: { type: array, items: { type: string } }
+      additionalProperties: false

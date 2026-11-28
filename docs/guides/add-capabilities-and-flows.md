@@ -173,3 +173,43 @@ library_marketplaces: [pipe-library]
 
 An enabled plugin comes from `enabledPlugins` in `~/.claude/settings.json`.
 See [spec 007](../../specs/007-plugin-library/spec.md).
+
+## 8. Run end-to-end tests (Playwright)
+
+The template [templates/e2e](../../templates/e2e/) is an `exec` capability for the tag `e2e`.
+It runs the tests of your local checkout against a deployed environment.
+It does not check out or build a branch.
+**Deploy the branch to the environment before the step runs.** If you do not, the result does not include your change.
+
+1. Install the test dependencies and the browsers in your checkout. The wrapper installs nothing.
+2. Keep the checkout on a branch that you trust. The tests run as your OS user with no sandbox.
+3. In the Playwright config, set `use.baseURL` to `process.env.BASE_URL`. Do not set a fixed URL.
+4. Copy [e2e.example.json](../../templates/e2e/e2e.example.json) to `~/.pipe/e2e.json`. Set `checkout`, `node`, `envs`, and `default_env`.
+5. Add [config.example.yaml](../../templates/e2e/config.example.yaml) to your config. Use absolute paths.
+6. Restart the adapter.
+
+Put only test environments in `envs`. A person who can start a pipeline can start these tests.
+
+Input in `payload`:
+
+- `env`: a name in `envs`. The default is `default_env`.
+- `filter`: a relative test file path. It uses only `A-Z`, `a-z`, `0-9`, `_`, `.`, `/`, `-`.
+
+The text goal of a step does not set `payload`.
+Thus `flow:test-run` and the other shared flows use `default_env` and run all tests.
+To select a different value, add `payload: {env: <NAME>}` to a step in your own flow.
+
+The child process gets only `HOME`, `PATH`, `BASE_URL`, and `CI`.
+If your tests need a login, the checkout must supply it.
+
+Results:
+
+- Tests pass: `done`.
+- Tests fail: `failed`. This starts the `on_fail` branch of the step.
+- Bad input, bad setup, or timeout: the step fails and starts no branch.
+
+The wrapper attaches `report.txt` and at most 5 screenshots.
+For a failed step, the thread message does not include the result text. Open the attached files.
+The next step cannot read the content of these files.
+It removes common secret patterns from the report. It cannot remove secrets from screenshots.
+For screenshots, set `use.screenshot` to `only-on-failure` in the Playwright config.

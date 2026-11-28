@@ -1,0 +1,9 @@
+{
+  "checkout": "/ABSOLUTE/PATH/TO/your-e2e-checkout",
+  "node": "/ABSOLUTE/PATH/TO/node",
+  "envs": {
+    "staging": "https://staging.example.com"
+  },
+  "default_env": "staging",
+  "timeout_s": 540
+}

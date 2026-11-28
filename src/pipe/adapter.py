@@ -1,6 +1,7 @@
 """Composition root and main loop. Imports no Slack module (FR-020)."""
 
 import logging
+import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -48,6 +49,7 @@ from pipe.planner import PlanResult, plan
 from pipe.stepper import GATE, Stepper
 
 WEEK = 7 * 86400
+TICK_S = 60
 log = logging.getLogger("pipe.adapter")
 
 
@@ -75,7 +77,11 @@ class Adapter:
         `caps`: exposed capabilities by id (default: found at start). `stepper_kw`: timer etc."""
         self.cfg, self.t, self.rt = cfg, transport, runtime
         self.flows, self.expand, self.caps = flows or {}, expand, dict(caps or {})
-        kw = {"allowlist": getattr(cfg, "allowlist", ()), **(stepper_kw or {})}
+        kw = {
+            "allowlist": getattr(cfg, "allowlist", ()),
+            "tag_map": getattr(cfg, "tags", {}),
+            **(stepper_kw or {}),
+        }
         self.stepper = Stepper(transport, runtime, self._state, self.caps, **kw)
         self.cards: CardCache | None = None
         self.threads: dict[tuple, str] = {}  # (channel, ts) -> thread ts; ponytail: grows per run
@@ -443,13 +449,13 @@ class Adapter:
                     msgs.update({m.ts: m for m in [p, *self.t.replies(ch, p.ts, oldest=last)]})
                 missed += pick_missed(
                     list(msgs.values()), self.agent_id, last, {*self.keys, *self.in_flight},
-                    self.t.mention,
+                    self.t.mention(self.handle),
                 )  # fmt: skip
             except Exception:
                 log.exception("catch-up failed for %s", ch)
         for m in sorted(missed, key=lambda m: float(m.ts)):
             e = MentionEvent(m.channel, m.ts, m.thread, m.sender_id, m.sender_is_bot, m.text)
-            if d := self._accept(e):
+            if d := self._accept(e, self.handle):
                 self._process(e, d.action)
         self.wake_pass()
 
@@ -507,9 +513,26 @@ def build(cfg: Config, transport, runtime, scrub_fn, escape_fn, **kw) -> Adapter
 def run_forever(cfg: Config, transport, runtime, scrub_fn, escape_fn, connect: Callable) -> None:
     """I/O only: catch up, then connect Socket Mode and block. Not unit-tested."""
     _setup_log()
-    a = build(cfg, transport, runtime, scrub_fn, escape_fn, flows=load_default())
+
+    def timer(secs: float, fn: Callable) -> None:  # step and dialog timeouts, on the worker
+        t = threading.Timer(secs, lambda: a.submit(fn))
+        t.daemon = True
+        t.start()
+
+    a = build(
+        cfg, transport, runtime, scrub_fn, escape_fn, flows=load_default(),
+        stepper_kw={"timer": timer, "step_timeout_min": cfg.step_timeout_min},
+    )  # fmt: skip
     a.start()  # handlers + first catch-up, before events flow
     a.submit = ThreadPoolExecutor(max_workers=1).submit  # one worker: replies never overlap
+    threading.Thread(target=_tick, args=(a,), daemon=True).start()
     connect()  # each connect fires on_reconnect, so a gap is caught up
     while True:
         time.sleep(3600)
+
+
+def _tick(a: Adapter) -> None:
+    """Wake pass every minute: unclaimed tag steps, offline owners, dialog timeouts."""
+    while True:
+        time.sleep(TICK_S)
+        a.submit(a.wake_pass)

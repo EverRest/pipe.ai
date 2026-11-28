@@ -3,13 +3,20 @@
 import ast
 from pathlib import Path
 
-CORE = sorted((Path(__file__).resolve().parents[2] / "src/pipe/core").glob("*.py"))
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+CORE = sorted((ROOT / "src/pipe/core").glob("*.py"))
+TAG_KEYS = tuple(yaml.safe_load((ROOT / "flows/tags.yaml").read_text())["tags"])
 BAD_MODULES = (
     "slack", "slack_sdk", "slack_bolt", "subprocess", "pipe.runtime_", "pipe.transport_",
     "pipe.git_io", "pipe.gitlab_io", "pipe.mr_gitlab", "pipe.cli", "pipe.adapter",
     "pipe.flows_io",
 )  # fmt: skip
-BAD_LITERALS = ("mcp__", "Bash(", "wiz", "gitlab")
+BAD_LITERALS = ("mcp__", "Bash(", "wiz", "gitlab", *TAG_KEYS)
+# `context` is also a payload field name (spec 003, effective_payload), not a tag.
+# Allow that one word in core/context.py only.
+ALLOWED_IN = {"context.py": {"context"}}
 
 
 def _imports(tree):
@@ -34,7 +41,10 @@ def test_core_has_no_forbidden_imports_or_names():
         for n in ast.walk(tree):
             if isinstance(n, ast.Constant) and isinstance(n.value, str):
                 low = n.value.lower()
+                skip = ALLOWED_IN.get(f.name, set())
                 found += [
-                    f"{f.name}:{n.lineno} literal has {b}" for b in BAD_LITERALS if b.lower() in low
+                    f"{f.name}:{n.lineno} literal has {b}"
+                    for b in BAD_LITERALS
+                    if b not in skip and b.lower() in low
                 ]
     assert not found, found

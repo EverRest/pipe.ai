@@ -119,7 +119,7 @@ def run_write(
             prepared = prepare(ls, run_dir, read_mcp_entries(home or Path.home()))
         # the worktree is the only root: add-dir and path rules come from it
         wcfg = SimpleNamespace(**{**vars(cfg), "repo_roots": [wt]})
-        cmd = build_cmd(wcfg, st.policy, prepared) + ["--add-dir", wt]
+        cmd = build_cmd(wcfg, st.policy, prepared, settings=True) + ["--add-dir", wt]
         try:
             code, out = runner(
                 cmd, build_prompt(inp.thread, task), _child_env(), wt, cfg.step_timeout_min * 60

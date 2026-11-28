@@ -2,7 +2,8 @@
 
 stdin: effective payload JSON. stdout: one JSON result. Exit 0 also for a
 runtime `failed` status. Env: WIZ_REVIEW_URL, WIZ_REVIEW_TOKEN (never printed),
-optional WIZ_REVIEW_MAX_WAIT_S (default 3600).
+WIZ_REVIEW_GITLAB_HOST (the only host a change link may use), optional
+WIZ_REVIEW_MAX_WAIT_S (default 3600).
 """
 
 import json
@@ -47,7 +48,7 @@ def run(payload, env, http=http_json, sleep=time.sleep, now=time.monotonic):
     """Return (exit_code, result dict)."""
     tok = env.get("WIZ_REVIEW_TOKEN", "")
     fail = lambda rc, t: (rc, {"text": scrub(t, tok)})  # noqa: E731
-    for k in ("WIZ_REVIEW_URL", "WIZ_REVIEW_TOKEN"):
+    for k in ("WIZ_REVIEW_URL", "WIZ_REVIEW_TOKEN", "WIZ_REVIEW_GITLAB_HOST"):
         if not env.get(k):
             return fail(2, f"missing environment variable {k}")
     base = env["WIZ_REVIEW_URL"].rstrip("/")
@@ -59,6 +60,8 @@ def run(payload, env, http=http_json, sleep=time.sleep, now=time.monotonic):
     link = find_link(payload)
     if not link:
         return fail(2, "missing change link")
+    if urllib.parse.urlparse(link).hostname != env["WIZ_REVIEW_GITLAB_HOST"].lower():
+        return fail(2, "change link is not on the GitLab host")
     q = f"{base}/reviews?url={urllib.parse.quote(link, safe='')}"
     deadline = now() + int(env.get("WIZ_REVIEW_MAX_WAIT_S") or 3600)
     try:

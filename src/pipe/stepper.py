@@ -1,12 +1,14 @@
 """Step state machine over an injected transport and runtime. No chat or tool names here.
 Status texts come from `core/render.py`. The thread is the state: every call re-reads it."""
 
+import logging
 import shutil
 import time
 from pathlib import Path
 from types import SimpleNamespace
 
 from pipe.core.capability import Capability
+from pipe.core.card import resolve_tags
 from pipe.core.claim import resolve_claim, ts_key
 from pipe.core.context import effective_payload
 from pipe.core.contract import Button, RuntimeFailed, RuntimeInput, UploadRefused
@@ -19,6 +21,7 @@ from pipe.core.scrub import scrub
 from pipe.core.trust import owner_thread
 from pipe.runtime_select import check_input, check_output
 
+log = logging.getLogger(__name__)
 CLAIM_SETTLE_S = 2
 OWNER_OFFLINE_AFTER_S = 60
 RETRY = [Button("pipe_retry", "Retry")]
@@ -40,14 +43,17 @@ class Stepper:
         step_timeout_min: int = 30,
         dialog_timeout_h: int = 24,
         allowlist=(),
+        tag_map: dict | None = None,
     ):
         """`load(channel, thread_ts)` gives a fresh `ThreadState`. `caps` are the exposed
         capabilities of this agent. `timer(seconds, fn)` is an injected factory.
-        `allowlist` comes from the config; the owner is the card owner (spec 004)."""
+        `allowlist` comes from the config; the owner is the card owner (spec 004).
+        `tag_map` is the config tag map: the same tags the card publishes."""
         self.t, self.rt, self.load, self.caps = transport, runtime, load, caps
         self.sleep, self.timer, self.settle_s = sleep, timer, settle_s
         self.step_timeout_min, self.dialog_timeout_h = step_timeout_min, dialog_timeout_h
         self.allowlist = tuple(allowlist)
+        self.tag_map = dict(tag_map or {})
         self._seen: set[str] = set()
 
     # --- small helpers
@@ -274,7 +280,9 @@ class Stepper:
         """Tag step: the lowest exposed capability id that has the tag and fits the access."""
         tag = s["capability"][len(_TAG) :]
         ids = sorted(
-            k for k, c in self.caps.items() if tag in c.tags and access_fits(s["access"], c.access)
+            k
+            for k, c in self.caps.items()
+            if tag in resolve_tags(c, self.tag_map) and access_fits(s["access"], c.access)
         )
         return ids[0] if ids else None
 
@@ -360,6 +368,9 @@ class Stepper:
             return fail(str(e) or "runtime failed")
         except LookupError:
             return fail("capability not available")
+        except Exception:
+            log.exception("runtime crashed")
+            return fail("internal error")
         if run_dir := getattr(out, "run_dir", None):
             dirs.append(run_dir)
         if out.status == "waiting" and out.reason == "needs_input":

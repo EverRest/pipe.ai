@@ -101,3 +101,8 @@ def test_newest_card_per_bot_wins():
         [card("B1", "U1", ts="1.0", name="old"), card("B1", "U1", ts="2.0", name="new")]
     )
     assert cc.cards()["B1"]["name"] == "new"
+
+
+def test_duplicate_bot_user_id_keeps_lower_ts():
+    r, c, cc = make([card("B1", "U1", ts="5.0"), card("B2", "U1", ts="3.0")])
+    assert set(cc.cards()) == {"B2"}

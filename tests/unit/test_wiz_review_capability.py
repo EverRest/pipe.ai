@@ -10,7 +10,11 @@ w = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(w)
 
 TOKEN = "s3cret-tok-value"  # noqa: S105
-ENV = {"WIZ_REVIEW_URL": "https://wiz.example/api", "WIZ_REVIEW_TOKEN": TOKEN}
+ENV = {
+    "WIZ_REVIEW_URL": "https://wiz.example/api",
+    "WIZ_REVIEW_TOKEN": TOKEN,
+    "WIZ_REVIEW_GITLAB_HOST": "gitlab.example",
+}
 MR = {"mr_url": "https://gitlab.example/g/p/-/merge_requests/1"}
 
 
@@ -127,6 +131,29 @@ def test_https_only_except_localhost(url):
     assert rc == 2 and not h.calls
     (rc, _), _ = go(MR, Http(["ready"]), env={**ENV, "WIZ_REVIEW_URL": "http://localhost:8080/api"})
     assert rc == 0
+
+
+def test_link_on_other_host_refused_without_request():
+    h = Http(["none"])
+    (rc, out), _ = go({"mr_url": "https://evil.example/g/p/-/merge_requests/1"}, h)
+    assert rc == 2 and "GitLab host" in out["text"] and not h.calls
+
+
+def test_no_gitlab_host_refuses_without_request():
+    h = Http(["none"])
+    env = {k: v for k, v in ENV.items() if k != "WIZ_REVIEW_GITLAB_HOST"}
+    (rc, out), _ = go(MR, h, env=env)
+    assert rc == 2 and "WIZ_REVIEW_GITLAB_HOST" in out["text"] and not h.calls
+
+
+def test_example_config_parses_with_array_context_and_exec_tag():
+    import yaml
+
+    ex = yaml.safe_load((P.parent / "config.example.yaml").read_text())
+    cap = ex["capabilities"][0]
+    assert f"{cap['runtime']}:{cap['id']}" in ex["tags"]
+    assert cap["input_schema"]["properties"]["context"]["type"] == "array"
+    assert "WIZ_REVIEW_GITLAB_HOST" in cap["env_allow"]
 
 
 def test_artifacts_https_only():

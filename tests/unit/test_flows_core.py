@@ -225,3 +225,24 @@ def test_effective_source_with_real_flow():
     plan.source = "template:bugfix@" + "0" * 32
     assert effective_source(plan, {"bugfix": f}, {}, "U1") == "free"
     assert effective_source(plan, {}, {}, "U1") == "free"
+
+
+def test_matches_same_answer_for_dict_and_object_cards():
+    from pipe.core.flows import Flow
+
+    f = Flow(
+        "bugfix", "h", "d",
+        (
+            {
+                "kind": "agent", "tags": ("review",), "access": "read",
+                "gate": None, "on_fail": None, "exclude_agents_of": None,
+            },
+        ),  # fmt: skip
+        frozenset({"review"}), {}, "",
+    )  # fmt: skip
+    steps = [{"agent": "B1", "access": "read", "capability": "cap-1"}]
+    skill = {"id": "cap-1", "tags": ["review"], "access": "read"}
+    obj = {"B1": NS(skills=[skill])}
+    as_dict = {"B1": {"skills": [skill]}}
+    assert f.matches(steps, obj, "U1") is True
+    assert f.matches(steps, as_dict, "U1") is True

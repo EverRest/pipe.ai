@@ -134,6 +134,7 @@ def test_happy_path(tmp_path):
     argv, env, cwd = seen[0]
     assert cwd in argv and argv.index("--add-dir") >= 0 and argv.count("--add-dir") == 1
     assert "--restricted" in argv and "Bash(git push:*)" in argv
+    assert argv[argv.index("--setting-sources") + 1] == "user"
     assert set(env) <= {"PATH", "HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "PIPE_RUNTIME"}
     assert g.names()[-2:] == ["worktree remove", "worktree prune"]
     pushed = next(c for c in g.calls if c[0] == "push")

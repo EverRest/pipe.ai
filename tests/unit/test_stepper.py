@@ -465,3 +465,35 @@ def test_other_person_in_owner_thread_gates_write_step():
 def test_other_bot_in_owner_thread_gates_write_step():
     r = _write_gate(Message("C", "1700000900.000000", TOP, "B9", True, "hi"))
     assert r.rt.inputs == [] and meta(r.ft.updates[-1])["status"] == "needs_approval"
+
+
+def test_runtime_crash_fails_step_with_fixed_reason():
+    class Crash:
+        def run(self, inp):
+            raise AttributeError("boom")
+
+    r = Rig(seed=[first_handoff()])
+    r.st.rt = Crash()
+    r.st.run_step(r.ev(first_handoff()), 0)
+    u = r.ft.updates[-1]
+    assert meta(u)["status"] == "failed" and meta(u)["reason"] == "internal error"
+
+
+def test_tag_from_config_map_binds_declared_capability():
+    from pipe.declared import declared_caps
+
+    entries = [{"id": "rv", "runtime": "claude", "name": "n", "description": "d", "access": "read"}]
+    caps = {c.id: c for c in declared_caps(entries)}
+    r = Rig(caps=caps, tag_map={"claude:rv": ["review"]})
+    assert r.st._bind({"capability": "tag:review", "access": "read"}) == "claude:rv"
+
+
+def test_timer_fires_no_claimer_for_tag_step():
+    timers = []
+    plan = {"steps": [step("B1"), step("any", "tag:review")], "source": "free"}
+    r = Rig(plan=plan, seed=[first_handoff()], timer=lambda s, fn: timers.append((s, fn)))
+    r.st.run_step(r.ev(first_handoff()), 0)
+    secs, fire = timers[-1]
+    assert secs == 30 * 60
+    fire()
+    assert meta(r.last_post())["reason"] == "no_claimer"

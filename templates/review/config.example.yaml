@@ -1,7 +1,7 @@
 # Example owner config for the wiz-review capability. Placeholders only.
 # The token is read from the environment variable WIZ_REVIEW_TOKEN, never from a file.
 tags:
-  wiz-review: [review]        # <capability_id> map entry: marks the capability as a review
+  exec:wiz-review: [review]   # <capability_id> map entry: marks the capability as a review
 exposed: [exec:wiz-review]    # owner-only until listed here
 # step_timeout_min covers the whole review wait (DQ6). Raise it for slow reviews, for example 60.
 step_timeout_min: 60
@@ -13,13 +13,13 @@ capabilities:
     access: read
     runtime: exec
     command: [<absolute_path_to_python3>, <absolute_path_to>/wiz_review_capability.py]
-    env_allow: [WIZ_REVIEW_URL, WIZ_REVIEW_TOKEN, WIZ_REVIEW_MAX_WAIT_S]
+    env_allow: [WIZ_REVIEW_URL, WIZ_REVIEW_TOKEN, WIZ_REVIEW_GITLAB_HOST, WIZ_REVIEW_MAX_WAIT_S]
     timeout_s: 3600
     input_schema:
       type: object
       properties:
         mr_url: { type: string }
         artifacts: { type: array, items: { type: string } }
-        context: { type: object }
+        context: { type: array }
       additionalProperties: false
     output_schema: { type: object }

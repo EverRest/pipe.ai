@@ -1,6 +1,6 @@
 """Catch-up selection. Pure."""
 
-from collections.abc import Callable, Collection
+from collections.abc import Collection
 
 from pipe.core.contract import Message
 
@@ -20,10 +20,10 @@ def pick_missed(
     bot_user_id: str,
     last_ts: str,
     handled: Collection[str],
-    mention: Callable[[str], str],
+    tag: str,
 ) -> list[Message]:
-    """Unhandled mentions of the agent newer than last_ts, oldest first."""
-    last, tag = float(last_ts), mention(bot_user_id)
+    """Unhandled mentions (`tag`, the mention text of the agent's user id) newer than last_ts."""
+    last = float(last_ts)
     out = []
     for m in messages:
         if m.sender_id == bot_user_id or tag not in m.text or float(m.ts) <= last:

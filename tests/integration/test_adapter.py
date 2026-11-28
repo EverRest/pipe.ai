@@ -90,7 +90,7 @@ def test_reply_is_scrubbed_and_escaped():
 def test_catch_up_after_reconnect_answers_once():
     a, t, r = make()
     t.link_down = True
-    m = t.add_message(CH, "<@B1> missed", sender_id="U_OWNER")
+    m = t.add_message(CH, "<@U1> missed", sender_id="U_OWNER")  # U1 is the handle
     assert r.inputs == []
     t.reconnect()
     t.reconnect()

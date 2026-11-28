@@ -81,7 +81,8 @@ def _norm(v):
 
 
 def _agent_ok(card, cap, t) -> bool:
-    entry = next((e for e in getattr(card, "skills", ()) if e.get("id") == cap), None)
+    skills = card.get("skills", ()) if isinstance(card, dict) else getattr(card, "skills", ())
+    entry = next((e for e in skills or () if e.get("id") == cap), None)
     return (
         entry is not None
         and bool(set(entry.get("tags") or ()) & set(t["tags"]))

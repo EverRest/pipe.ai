@@ -3,6 +3,7 @@
 import os
 import plistlib
 import shlex
+import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -10,6 +11,7 @@ from pathlib import Path
 from pipe.state import pipe_home
 
 LABEL = "com.pipe-ai.adapter"
+FALLBACK_DIRS = ("/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin")
 
 
 def _plist_path() -> Path:
@@ -20,11 +22,20 @@ def _launcher() -> str:
     return str(pipe_home() / "bin" / "pipe")
 
 
+def _path_value() -> str:
+    """Dirs of `claude` and `git` as found at install time, then the fallback dirs."""
+    found = [os.path.dirname(p) for n in ("claude", "git") if (p := shutil.which(n))]
+    return ":".join(dict.fromkeys([*found, *FALLBACK_DIRS]))
+
+
 def write_launcher(path, python=None) -> None:
-    """Shell script that runs the venv Python; absolute paths, no PATH lookup, no secrets."""
+    """Shell script that runs the venv Python with a fixed PATH. No secrets."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"#!/bin/sh\nexec {shlex.quote(python or sys.executable)} -m pipe.cli run\n")
+    path.write_text(
+        f"#!/bin/sh\nexport PATH={shlex.quote(_path_value())}\n"
+        f"exec {shlex.quote(python or sys.executable)} -m pipe.cli run\n"
+    )
     path.chmod(0o700)
 
 

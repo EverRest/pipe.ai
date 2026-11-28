@@ -8,6 +8,7 @@ from fakes import FAKE_SECRET, FAKE_URL, FakeTransport, build_claude_tree
 from pipe import adapter, state
 from pipe.config import Config
 from pipe.core.contract import RuntimeInput
+from pipe.core.runrequest import RunRequest
 from pipe.core.scrub import scrub
 from pipe.runtime_claude import ClaudeRuntime
 from pipe.runtime_claude_load import PreparedLoad
@@ -114,7 +115,7 @@ def runtime(tmp_path, monkeypatch, fake, prep, exposed=("skill:pa:clean",)):
 
 
 def inp(owner=False, ids=None):
-    req = SimpleNamespace(capability_ids=ids) if ids is not None else None
+    req = RunRequest(tuple(ids), "read", owner) if ids is not None else None
     return RuntimeInput([{"user": "u", "text": "t"}], {"id": "1"}, owner, req)
 
 

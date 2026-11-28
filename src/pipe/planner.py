@@ -42,7 +42,9 @@ PLAN_SCHEMA = {
 
 INSTRUCTION = (
     "Build a plan from the agent cards below. Use only the listed agents (by bot_id) and "
-    "capability IDs. Every bot step has a capability and access read. A step may use agent "
+    "capability IDs. Every bot step has a capability. Use access write only when the goal "
+    "changes files, otherwise read. Set target only when the request names a repo, and copy "
+    "the name as written. A step may use agent "
     "any with capability tag:<tag> when the request names no agent and a card offers the tag. "
     "A step may have a payload object only when the capability has an input_schema, and it "
     "must match that schema. A human step has agent human:<user>, access approve, no "
@@ -67,8 +69,8 @@ def _cards_block(cards) -> str:
     return json.dumps(out, ensure_ascii=False)
 
 
-def build_prompt(goal: str, cards, flows=None) -> str:
-    """Trusted instruction and cards first. The thread text last, as untrusted data."""
+def plan_instruction(cards, flows=None) -> str:
+    """Trusted task text: rules, cards, templates. The runtime keeps it out of the thread block."""
     head = INSTRUCTION + (FLOW_RULE if flows else "")
     parts = [head, f"<agent_cards>\n{_cards_block(cards)}\n</agent_cards>"]
     if flows:
@@ -76,10 +78,12 @@ def build_prompt(goal: str, cards, flows=None) -> str:
             {"name": n, "description": sanitize_text(str(f.description))} for n, f in flows.items()
         ]
         parts.append(f"<templates>\n{json.dumps(tpl, ensure_ascii=False)}\n</templates>")
-    parts.append(
-        f"<untrusted_thread>\n{goal.replace('<', '&lt;').replace('>', '&gt;')}\n</untrusted_thread>"
-    )
     return "\n".join(parts)
+
+
+def untrusted_goal(goal: str) -> str:
+    """The request text, with angle brackets escaped so it cannot close the thread block."""
+    return goal.replace("<", "&lt;").replace(">", "&gt;")
 
 
 @dataclass(frozen=True)
@@ -112,9 +116,14 @@ def plan(goal, cards, flows, runtime, starter=None, expand=None, thread=None) ->
     """
     from pipe.core.contract import RuntimeFailed, RuntimeInput
 
-    task = {"id": "plan", "purpose": "plan", "schema": PLAN_SCHEMA}
+    task = {
+        "id": "plan",
+        "purpose": "plan",
+        "schema": PLAN_SCHEMA,
+        "instruction": plan_instruction(cards, flows),
+    }
     inp = RuntimeInput(
-        thread=thread or [{"user": "thread", "text": build_prompt(goal, cards, flows)}],
+        thread=thread or [{"user": "thread", "text": untrusted_goal(goal)}],
         task=task,
         requester_is_owner=False,
         request=planner_request(),

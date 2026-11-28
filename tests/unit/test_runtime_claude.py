@@ -203,3 +203,68 @@ def test_read_run_skips_run_write(monkeypatch):
     r, inp, calls, fake, _ = _rt_write(monkeypatch, None)
     assert r.run(inp).text == "hello"
     assert calls == [] and fake.calls
+
+
+def test_planner_request_runs_without_attribute_error(tmp_path):
+    from pipe.core.runrequest import planner_request
+
+    f = Fake()
+    out = rt(f, home=tmp_path).run(
+        RuntimeInput(requester_is_owner=False, request=planner_request(), **INP)
+    )
+    assert out.text == "hello" and len(f.calls) == 1
+
+
+def test_read_request_with_capability_runs(tmp_path):
+    from pipe.core.runrequest import RunRequest
+
+    f = Fake()
+    req = RunRequest(("claude:review",), "read", False)
+    out = rt(f, home=tmp_path).run(RuntimeInput(requester_is_owner=False, request=req, **INP))
+    assert out.text == "hello" and len(f.calls) == 1
+
+
+def test_owner_read_request_drops_write_tools(tmp_path):
+    from pipe.core.runrequest import RunRequest
+
+    cfg = Config(**{**CFG.__dict__, "owner_tools": ["Read", "Edit"]})
+    f = Fake()
+    req = RunRequest((), "read", True)
+    rt(f, cfg=cfg, home=tmp_path).run(RuntimeInput(requester_is_owner=True, request=req, **INP))
+    argv = f.calls[0]["argv"]
+    assert val(argv, "--tools") == "Read"
+    assert not any(a.startswith("Edit") for a in argv[: argv.index("--disallowedTools")])
+
+
+def test_plan_run_sends_plan_schema_and_instruction_outside_thread(tmp_path):
+    from pipe.core.runrequest import planner_request
+    from pipe.planner import PLAN_SCHEMA
+
+    plan = {"steps": [{"agent": "B1", "access": "read", "goal": "g", "capability": "c"}]}
+    f = Fake(out=json.dumps({"structured_output": plan}))
+    task = {"id": "plan", "purpose": "plan", "instruction": "RULES-TEXT"}
+    inp = RuntimeInput(
+        thread=[{"user": "thread", "text": "goal"}],
+        task=task,
+        requester_is_owner=False,
+        request=planner_request(),
+    )
+    out = rt(f, home=tmp_path).run(inp)
+    argv = f.calls[0]["argv"]
+    assert val(argv, "--json-schema") == json.dumps(PLAN_SCHEMA)
+    prompt = f.calls[0]["stdin"]
+    assert "RULES-TEXT" in prompt
+    assert "RULES-TEXT" not in prompt.split("<thread>")[1].split("</thread>")[0]
+    assert out.data == plan
+
+
+def test_non_owner_run_sends_setting_sources_user():
+    f = Fake()
+    rt(f).run(RuntimeInput(requester_is_owner=False, **INP))
+    assert val(f.calls[0]["argv"], "--setting-sources") == "user"
+
+
+def test_owner_chat_run_keeps_project_settings():
+    f = Fake()
+    rt(f).run(RuntimeInput(requester_is_owner=True, **INP))
+    assert "--setting-sources" not in f.calls[0]["argv"]

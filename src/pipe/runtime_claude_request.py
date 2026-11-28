@@ -18,10 +18,15 @@ class StepTools:
     load: LoadSet
 
 
+def _library(cfg) -> list[str]:
+    return getattr(cfg, "library_marketplaces", [])
+
+
 def _owner_only_deny(cfg, caps) -> list[str]:
     deny = []
     for c in caps:  # owner-only items are denied by name
-        if c.type in ("skill", "command", "mcp") and state_of(to_core(c), cfg.exposed) != "exposed":
+        core = to_core(c, _library(cfg))
+        if c.type in ("skill", "command", "mcp") and state_of(core, cfg.exposed) != "exposed":
             deny.append(f"mcp__{c.name}" if c.type == "mcp" else f"Skill({c.name})")
     return deny
 
@@ -38,7 +43,9 @@ def map_request(
         allowed = [t if t.startswith("Bash(") else f"{t}(/{workdir}/**)" for t in tools]
         deny = effective_deny_rules(cfg.deny_rules) + _owner_only_deny(cfg, caps)
         pol = ToolPolicy(tools, allowed, list(dict.fromkeys(deny)))
-        return StepTools(pol, load_set(caps, cfg.exposed, list(request.capabilities)))
+        return StepTools(
+            pol, load_set(caps, cfg.exposed, list(request.capabilities), _library(cfg))
+        )
     if request.access != "read":
         raise ValueError(f"access {request.access} is not supported")
     base = tools_for(request.requester_is_owner, cfg.owner_tools, cfg.deny_rules)
@@ -46,4 +53,4 @@ def map_request(
     deny = effective_deny_rules(cfg.deny_rules) + WRITE_TOOLS + _owner_only_deny(cfg, caps)
     deny = list(dict.fromkeys(deny))
     pol = ToolPolicy(keep(base.tools), keep(base.allowed), deny)
-    return StepTools(pol, load_set(caps, cfg.exposed, list(request.capabilities)))
+    return StepTools(pol, load_set(caps, cfg.exposed, list(request.capabilities), _library(cfg)))

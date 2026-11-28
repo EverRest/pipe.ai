@@ -14,8 +14,8 @@ def _json(p: Path):
         return None
 
 
-def _enabled_plugins(home: Path) -> list[tuple[str, Path]]:
-    """(name, install dir) of enabled plugins. Reads only `enabledPlugins` from settings."""
+def _enabled_plugins(home: Path) -> list[tuple[str, Path, str | None]]:
+    """(name, install dir, marketplace) of enabled plugins. Reads `enabledPlugins` only."""
     s = _json(home / ".claude" / "settings.json")
     on = s.get("enabledPlugins") if isinstance(s, dict) else None
     inst = _json(home / ".claude" / "plugins" / "installed_plugins.json")
@@ -27,7 +27,7 @@ def _enabled_plugins(home: Path) -> list[tuple[str, Path]]:
         path = Path(entries[0].get("installPath", ""))
         meta = _json(path / ".claude-plugin" / "plugin.json")
         name = meta.get("name") if isinstance(meta, dict) else None
-        out.append((str(name or key.split("@")[0]), path))
+        out.append((str(name or key.split("@")[0]), path, key.partition("@")[2] or None))
     return out
 
 
@@ -47,13 +47,13 @@ def _plugin_mcp(path: Path) -> dict:
 def read_mcp_entries(home: Path) -> dict[str, dict]:
     """Full entries (may hold secrets). Run time only (research.md D7)."""
     out: dict[str, dict] = {}
-    for _, path in _enabled_plugins(home):
+    for _, path, _ in _enabled_plugins(home):
         out |= _plugin_mcp(path)
     j = _json(home / ".claude.json")
     return out | _servers(j.get("mcpServers") if isinstance(j, dict) else None)
 
 
-def _items(type: str, root: Path, plugin: str | None, notices: list[Notice]):
+def _items(type: str, root: Path, plugin: str | None, notices: list[Notice], mkt=None):
     """Skills (`<root>/skills/*/SKILL.md`) or commands (`<root>/commands/*.md`)."""
     if type == "skill":
         found = [(d.name, d / "SKILL.md", d) for d in sorted((root / "skills").glob("*/"))]
@@ -62,7 +62,7 @@ def _items(type: str, root: Path, plugin: str | None, notices: list[Notice]):
         found = [(f.stem, f, f) for f in sorted((root / "commands").glob("*.md"))]
     for name, file, src in found:
         try:
-            yield from_text(type, name, file.read_text(), str(src), plugin)
+            yield from_text(type, name, file.read_text(), str(src), plugin, mkt)
         except OSError, ValueError:
             notices.append(
                 Notice("skipped", f"{type}:{name}", f"{type}:{name} skipped: unreadable")
@@ -76,13 +76,17 @@ def discover(home: Path, repo_roots: list[str]) -> tuple[list[ClaudeCapability],
     j = _json(home / ".claude.json")
     for n in _servers(j.get("mcpServers") if isinstance(j, dict) else None):
         caps.append(ClaudeCapability(id="", type="mcp", name=n, source=str(home / ".claude.json")))
-    for name, path in _enabled_plugins(home):
-        caps.append(ClaudeCapability(id="", type="plugin", name=name, source=str(path)))
+    for name, path, mkt in _enabled_plugins(home):
+        caps.append(
+            ClaudeCapability(id="", type="plugin", name=name, source=str(path), marketplace=mkt)
+        )
         for type in ("skill", "command"):
-            caps += _items(type, path, name, notices)
+            caps += _items(type, path, name, notices, mkt)
         for n in _plugin_mcp(path):
             caps.append(
-                ClaudeCapability(id="", type="mcp", name=n, plugin=name, source=f"{path}#{n}")
+                ClaudeCapability(
+                    id="", type="mcp", name=n, plugin=name, source=f"{path}#{n}", marketplace=mkt
+                )
             )
     for root in repo_roots:
         for d in sorted(Path(root).expanduser().glob("*/")):

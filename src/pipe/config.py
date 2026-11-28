@@ -48,6 +48,7 @@ class Config:
     base_branch: str = "main"
     allowlist: list[str] = field(default_factory=list)  # Slack IDs
     work_channel: str = "pipe-work"
+    library_marketplaces: list[str] = field(default_factory=list)  # owner-only by default
     mr_state: dict | None = None  # {"gitlab": {"url", "token": "keychain:<service>"}}
 
 
@@ -263,6 +264,12 @@ def validate_config(raw: dict) -> Config:
     if not isinstance(channel, str) or not channel:
         raise ConfigError("status_channel must be a non-empty string")
     exposed = _strs(raw.get("exposed", []), "exposed")
+    lib = raw.get("library_marketplaces", [])
+    if not (
+        isinstance(lib, list)
+        and all(isinstance(x, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", x) for x in lib)
+    ):
+        raise ConfigError("library_marketplaces must be a list of short names")
     tag_map = raw.get("tags", {})
     if not isinstance(tag_map, dict) or not all(isinstance(k, str) and k for k in tag_map):
         raise ConfigError("tags must be a map from a capability ID to a list of tags")
@@ -298,6 +305,7 @@ def validate_config(raw: dict) -> Config:
         step_timeout_min=timeout,
         warnings=warnings,
         exposed=exposed,
+        library_marketplaces=lib,
         tags=tag_map,
         description=desc,
         agents_channel=agents,

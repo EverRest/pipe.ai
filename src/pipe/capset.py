@@ -12,5 +12,5 @@ from pipe.runtime_claude_exposure import to_core
 
 def collect(cfg: Config, home: Path | None = None) -> tuple[list[Capability], list[Notice]]:
     found, skipped = discover(home or Path.home(), cfg.repo_roots)
-    caps = [*map(to_core, found), *declared_caps(cfg)]
+    caps = [*(to_core(c, cfg.library_marketplaces) for c in found), *declared_caps(cfg)]
     return caps, [*skipped, *exposure_notices(caps, cfg.exposed, cfg.tags)]

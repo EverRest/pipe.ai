@@ -62,10 +62,12 @@ The owner accepted the recommended option for each item below. Review them befor
 - 005 DQ4: there is no rate cap for a leaked trigger token. Remove the bot from the allowlist and rotate the token.
 - 006 DQ1: `hop ≤ 5` applies only when each adapter recomputes the template source from its own files. Otherwise the plan is `free` with `hop ≤ 3`.
 - 001: `upload_file` accepts only regular files in `~/.pipe/run/`, at most 10 MB.
+- 008 (not yet implemented): an answer from the knowledge capability (wiki) is untrusted reference data and never changes step rights. The wiki answers with the access of its owner (confused deputy). The shared knowledge base must hold only documents that are open to the whole team, or the capability must check the asker. The answer shows in the thread: use a private channel for a sensitive wiki. Add a rate limit and a budget.
 - Residual risk (004): the `.git` check does not cover the shared repo config under `.git/worktrees/`. Closing it is a separate task.
 
 ## 6. Open items
 
 - None in the specs. Decided on 2026-11-26: free Slack plan for the experiment, the owner owns the wiz-review wrapper, 004 O1/O2 and 005 O1 as recommended.
 - Open check: whether Slack sends `app_mention` for a bot mention. Run it first (see section 4).
+- Open (deferred, spec `specs/008-knowledge-capability/`): a wiki LLM as a read-only `knowledge` capability. Two questions for the owner: (1) Does the wiki bot have an HTTP API or a CLI, or is it Slack-only? (2) Does the wiki hold documents with restricted access? No tasks exist until both have answers.
 - `docs/raw.md` (the source idea) is not in this repository.

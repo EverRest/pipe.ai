@@ -75,9 +75,12 @@ The core reads `owner`, `allowlist`, `work_channel`, `step_timeout_min`, and `di
 |---|---|---|---|
 | `capabilities` | list of declared capabilities | `[]` | 002 |
 | `exposed` | list of capability IDs | `[]` | 002 |
+| `library_marketplaces` | list of marketplace names (letters, digits, `-`, `_`; 1 to 64 chars) | `[]` | 007 |
 | `tags` | map of capability ID to a list of tags | `{}` | 002 |
 | `allowlist` | list of `sender_id` values (bot or user IDs; Slack pattern `^[BUW][A-Z0-9]{2,}$`) | `[]` | 004, 005 |
 | `flows_dir` | str | `flows/` in the checkout | 006 |
+
+Skills, commands, and MCP servers of a plugin from a marketplace in `library_marketplaces` are `owner-only`, even when clean. Only an explicit `exposed` entry exposes them. The marketplace is the part after `@` in the plugin ID `<name>@<marketplace>`.
 
 A declared capability entry has: `id`, `name`, `description`, `tags`, `access` (`read` only), `runtime` (`exec` or `http`), `command` (exec: argv list, absolute first item), `env_allow`, `url` (http: `https`, or `http` for `localhost` and `127.0.0.1`), `token` (`keychain:<service>`), `timeout_s` (1 to 3600), `input_schema`, `output_schema`. An exposed `exec` entry MUST have an `input_schema`. A schema with `additionalProperties: false` must list `context` and `artifacts` (003 FR-037).
 

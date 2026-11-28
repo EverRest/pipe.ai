@@ -6,8 +6,11 @@ from types import SimpleNamespace
 
 from fakes import FAKE_SECRET, FAKE_URL, FakeTransport, build_claude_tree
 from pipe import adapter, state
+from pipe.capset import collect
 from pipe.config import Config
+from pipe.core.card import Identity, build_card
 from pipe.core.contract import RuntimeInput
+from pipe.core.exposure import state_of
 from pipe.core.runrequest import RunRequest
 from pipe.core.scrub import scrub
 from pipe.runtime_claude import ClaudeRuntime
@@ -172,3 +175,55 @@ def test_publish_makes_no_user_or_bot_lookup(tmp_path, monkeypatch):
     assert spy.names  # the spy saw calls
     assert not {n for n in spy.names if "users_info" in n or "bots_info" in n}
     assert not {n for n in spy.names if "users.info" in n or "bots.info" in n}
+
+
+# --- library marketplaces are owner-only unless listed in exposed ---
+
+
+def _tree(tmp_path):
+    """Fake tree plus a clean skill (`allowed-tools: Read`) in plugin `pa@m`."""
+    home, roots = build_claude_tree(tmp_path)
+    d = home / "plugstore" / "pa" / "skills" / "safe"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: safe\ndescription: d\nallowed-tools: Read\n---\nx\n")
+    return home, roots
+
+
+def _lib(tmp_path, exposed=(), lib=("m",)):
+    home, roots = _tree(tmp_path)
+    cfg = Config(
+        "a", "keychain:x", repo_roots=roots, exposed=list(exposed), library_marketplaces=list(lib)
+    )
+    caps, _ = collect(cfg, home)
+    return cfg, {c.id: c for c in caps}
+
+
+def test_library_clean_skill_is_owner_only_and_not_in_card(tmp_path):
+    cfg, by = _lib(tmp_path)
+    assert state_of(by["skill:pa:safe"], cfg.exposed) == "owner-only"
+    card = build_card(
+        Identity("a", "d", "U1", "B1", "U2"), list(by.values()), cfg.exposed, cfg.tags
+    )
+    assert "skill:pa:safe" not in repr(card)
+
+
+def test_library_skill_in_exposed_is_exposed(tmp_path):
+    cfg, by = _lib(tmp_path, exposed=["skill:pa:safe"])
+    assert state_of(by["skill:pa:safe"], cfg.exposed) == "exposed"
+
+
+def test_other_marketplace_and_empty_list_unchanged(tmp_path):
+    for lib in (("other",), ()):
+        cfg, by = _lib(tmp_path / "-".join(lib or ("none",)), lib=lib)
+        assert state_of(by["skill:pa:safe"], cfg.exposed) == "exposed"
+
+
+def test_library_skill_is_denied_in_a_step(tmp_path):
+    from pipe.runtime_claude_discovery import discover
+    from pipe.runtime_claude_request import map_request
+
+    home, roots = _tree(tmp_path)
+    cfg = Config("a", "keychain:x", repo_roots=roots, library_marketplaces=["m"])
+    caps, _ = discover(home, roots)
+    st = map_request(RunRequest(("skill:pa:safe",), "read", False), cfg, caps)
+    assert st.load.skills == () and "Skill(safe)" in st.policy.disallowed

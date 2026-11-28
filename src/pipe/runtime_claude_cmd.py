@@ -9,7 +9,13 @@ from pipe.core.contract import RuntimeFailed
 from pipe.runtime_claude_load import PreparedLoad
 from pipe.runtime_claude_tools import ToolPolicy
 
-PATH_TOOLS = ("Read", "Grep", "Glob")
+PATH_TOOLS = ("Read", "Grep", "Glob", "Edit", "Write", "NotebookEdit")
+# The agent must not change its own settings, whatever the owner allows.
+CLAUDE_DIR_DENY = [
+    "Edit(//**/.claude/**)",
+    "Write(//**/.claude/**)",
+    "NotebookEdit(//**/.claude/**)",
+]
 ENV_KEEP = ("PATH", "HOME", "USER", "LANG", "LC_ALL", "TMPDIR")
 SCHEMA = json.dumps(
     {
@@ -54,8 +60,7 @@ def build_cmd(
     if pol.allowed:
         for r in _roots(cfg)[1:]:
             cmd += ["--add-dir", r]
-    if pol.disallowed:
-        cmd += ["--disallowedTools", *pol.disallowed]
+    cmd += ["--disallowedTools", *pol.disallowed, *CLAUDE_DIR_DENY]
     if cfg.model:
         cmd += ["--model", cfg.model]
     if cfg.max_budget_usd is not None:
@@ -67,9 +72,14 @@ def build_cmd(
     return cmd
 
 
+def _escape(s: str) -> str:
+    """Keep untrusted text from closing the <thread> block."""
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def build_prompt(thread: list[dict], task: dict) -> str:
     """`task["instruction"]` is trusted text. It goes before the untrusted <thread> block."""
-    lines = "\n".join(f"{m['user']}: {m['text']}" for m in thread)
+    lines = "\n".join(f"{_escape(m['user'])}: {_escape(m['text'])}" for m in thread)
     head = f"{task['instruction']}\n" if task.get("instruction") else ""
     answer = (
         "Answer as JSON that matches the schema."

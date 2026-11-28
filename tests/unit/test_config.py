@@ -411,3 +411,23 @@ def test_mr_state_refused(gl, key):
 def test_work_channel_refused(bad):
     with pytest.raises(ConfigError, match="work_channel"):
         cfg(work_channel=bad)
+
+
+# --- library_marketplaces ---
+
+
+def test_library_marketplaces_default_and_ok():
+    assert cfg().library_marketplaces == []
+    assert cfg(library_marketplaces=["pipe-library", "a_1"]).library_marketplaces == [
+        "pipe-library",
+        "a_1",
+    ]
+
+
+@pytest.mark.parametrize(
+    "bad", ["x", {"a": 1}, [1], [""], ["a b"], ["a@b"], ["x" * 65], ["../x"], [["a"]]]
+)
+def test_library_marketplaces_invalid(bad):
+    with pytest.raises(ConfigError, match="library_marketplaces") as e:
+        cfg(library_marketplaces=bad)
+    assert "a b" not in str(e.value) and "../x" not in str(e.value)

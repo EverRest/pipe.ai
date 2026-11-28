@@ -108,3 +108,12 @@ def test_same_mcp_name_in_two_scopes_is_kept(tmp_path):
     j.write_text(json.dumps(d))
     caps = [c for c in discover(home, [str(repos)])[0] if c.type == "mcp" and c.name == "pm"]
     assert {c.plugin for c in caps} == {None, "pa"} and len({c.source for c in caps}) == 2
+
+
+def test_marketplace_from_plugin_key(tmp_path):
+    home, repos = run(tmp_path)
+    caps = discover(home, [str(repos)])[0]
+    by = {c.id: c.marketplace for c in caps if c.plugin == "pa" and c.type != "mcp"}
+    assert set(by.values()) == {"m1", "m2"} or {"m1", "m2"} <= set(by.values())
+    assert next(c for c in caps if c.id == "skill:mine").marketplace is None
+    assert next(c for c in caps if c.id == "mcp:pa:pm").marketplace == "m1"

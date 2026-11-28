@@ -36,3 +36,13 @@ def test_to_core():
     assert to_core(cap("plugin")).role == "group"
     assert to_core(cap("repo")).role == "listed_only"
     assert to_core(c) == k and c.declared_tags == ("review",)
+
+
+def test_library_marketplace_is_owner_only():
+    lib = cap(marketplace="pipe-library")
+    assert classify(lib) == "open"  # no library list: nothing changes
+    assert classify(lib, ("pipe-library",)) == "owner-only"
+    assert classify(cap(marketplace="other"), ("pipe-library",)) == "open"
+    assert classify(cap(), ("pipe-library",)) == "open"  # personal item
+    assert to_core(lib, ("pipe-library",)).open is False
+    assert to_core(lib).open is True

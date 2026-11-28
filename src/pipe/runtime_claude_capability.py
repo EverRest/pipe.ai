@@ -18,6 +18,7 @@ class ClaudeCapability:
     declared_tags: tuple[str, ...] = ()
     plugin: str | None = None
     plugin_id: str | None = None
+    marketplace: str | None = None  # from the plugin key `<name>@<marketplace>`
     allowed_tools: tuple[str, ...] | None = None
     signals: tuple[str, ...] = ()
     source: str = ""  # INTERNAL local path. Never shown.
@@ -86,7 +87,14 @@ def _tools(v) -> tuple[str, ...] | None:
     return tuple(str(i).strip() for i in items if str(i).strip())
 
 
-def from_text(type: str, default_name: str, text: str, source: str, plugin: str | None = None):
+def from_text(
+    type: str,
+    default_name: str,
+    text: str,
+    source: str,
+    plugin: str | None = None,
+    marketplace: str | None = None,
+):
     """Build a skill or command item. Raises ValueError for bad frontmatter. `id` is set later."""
     fm, _ = parse_frontmatter(text)
     name = (fm.get("name") if type == "skill" else None) or default_name
@@ -97,6 +105,7 @@ def from_text(type: str, default_name: str, text: str, source: str, plugin: str 
         description=str(fm.get("description") or "").strip(),
         declared_tags=sanitize_tags(fm.get("tags")),
         plugin=plugin,
+        marketplace=marketplace,
         allowed_tools=_tools(fm.get("allowed-tools")),
         signals=find_signals(text),
         source=source,

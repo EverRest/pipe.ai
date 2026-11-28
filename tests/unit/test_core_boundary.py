@@ -13,7 +13,7 @@ BAD_MODULES = (
     "pipe.git_io", "pipe.gitlab_io", "pipe.mr_gitlab", "pipe.cli", "pipe.adapter",
     "pipe.flows_io",
 )  # fmt: skip
-BAD_LITERALS = ("mcp__", "Bash(", "wiz", "gitlab", *TAG_KEYS)
+BAD_LITERALS = ("mcp__", "Bash(", "wiz", "gitlab", "marketplace", *TAG_KEYS)
 # `context` is also a payload field name (spec 003, effective_payload), not a tag.
 # Allow that one word in core/context.py only.
 ALLOWED_IN = {"context.py": {"context"}}

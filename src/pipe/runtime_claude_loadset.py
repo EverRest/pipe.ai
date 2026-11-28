@@ -29,7 +29,7 @@ class LoadSet:
 
 
 def load_set(
-    caps: list[ClaudeCapability], exposed: list[str], capability_ids: list[str]
+    caps: list[ClaudeCapability], exposed: list[str], capability_ids: list[str], library=()
 ) -> LoadSet:
     by_id = {c.id: c for c in caps}
     skills, commands, mcp, skipped, links = [], [], [], [], set()
@@ -42,7 +42,8 @@ def load_set(
         if c is None:
             skip(i, "not found")
         elif (
-            c.type not in ("skill", "command", "mcp") or state_of(to_core(c), exposed) != "exposed"
+            c.type not in ("skill", "command", "mcp")
+            or state_of(to_core(c, library), exposed) != "exposed"
         ):
             skip(i, "not exposed")
         elif c.type == "mcp":

@@ -51,6 +51,20 @@ def _build_runtime(cfg, default, read_cap_token, scrub=None, esc=lambda s: s, **
     return _Router(default, {"http": http, "exec": ex})
 
 
+def _sweep(cfg) -> None:
+    """Drop stale worktrees from a crashed run. Never stops the adapter."""
+    import logging
+    import time
+
+    from pipe.git_io import Git, sweep_worktrees
+
+    try:
+        repos = list(cfg.delegate_repos.values())
+        sweep_worktrees(Git(), repos, cfg.worktree_root, time.time())
+    except Exception:
+        logging.getLogger(__name__).exception("worktree sweep failed")
+
+
 def _run_adapter() -> int:
     """Composition root for `pipe run`: the only place that names the Slack transport."""
     from slack_sdk import WebClient
@@ -69,6 +83,7 @@ def _run_adapter() -> int:
     # The adapter escapes the reply once; the runtime only scrubs (no double escape).
     rt = ClaudeRuntime(cfg, scrub=scrub, escape_mentions=lambda s: s)
     rt = _build_runtime(cfg, rt, read_capability_token, scrub)
+    _sweep(cfg)
     adapter.run_forever(cfg, t, rt, scrub, t.escape_mentions, lambda: t.connect(bot, app))
     return 0
 

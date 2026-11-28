@@ -60,7 +60,45 @@ def slack_http(method, body, token):
         return json.load(resp)
 
 
+def card_main(argv, http):
+    from dataclasses import asdict
+
+    from pipe.core.card import CARD_EVENT, Card, skills_hash, validate_card
+
+    a = argparse.ArgumentParser(prog="post_trigger.py card")
+    for k in ("token-env", "agents-channel", "owner", "bot-user-id", "name"):
+        a.add_argument(f"--{k}", required=True)
+    args = a.parse_args(argv)
+    try:
+        token = read_token(args.token_env)
+        bot_id = http("auth.test", {}, token).get("bot_id") or ""
+        card = Card(
+            name=_clean(args.name), description="Trigger bot", owner=args.owner, bot_id=bot_id,
+            bot_user_id=args.bot_user_id, skills=[], hash=skills_hash([]), kind="trigger",
+        )  # fmt: skip
+        errs = validate_card(card)
+        if errs:
+            raise ValueError("invalid card: " + ", ".join(errs))
+        msg = {
+            "channel": args.agents_channel,
+            "text": f"{card.name} (trigger), owner {card.owner}",
+            "metadata": {"event_type": CARD_EVENT, "event_payload": asdict(card)},
+        }
+        reply = http("chat.postMessage", msg, token)
+    except (ValueError, OSError) as e:
+        print(f"error: {type(e).__name__}: {e}", file=sys.stderr)
+        return 1
+    if not reply.get("ok"):
+        print(f"error: slack {reply.get('error', 'unknown')}", file=sys.stderr)
+        return 1
+    print(f"posted card ts={reply.get('ts')}")
+    return 0
+
+
 def main(argv=None, http=slack_http):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["card"]:
+        return card_main(argv[1:], http)
     a = argparse.ArgumentParser()
     a.add_argument("--token-env", required=True)
     a.add_argument("--channel", required=True)

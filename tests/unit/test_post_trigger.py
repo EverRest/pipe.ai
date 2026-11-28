@@ -135,3 +135,34 @@ def test_yml_has_only_placeholders():
     assert not re.search(r"xox|xapp|glpat-|Bearer ", text)
     assert not re.search(r"\b[CUBW][A-Z0-9]{8,}\b", text)
     assert "<CHANNEL_ID>" in text and "<AGENT_USER_ID>" in text
+
+
+def card_argv(*extra):
+    return [
+        "card", "--token-env", "MY_TOK", "--agents-channel", "CAG", "--owner", "UOWN",
+        "--bot-user-id", "UBOT", "--name", "trigger-bot", *extra,
+    ]  # fmt: skip
+
+
+def test_card_posts_trigger_card(monkeypatch, capsys):
+    monkeypatch.setenv("MY_TOK", TOKEN)
+    http = FakeHttp()
+    assert pt.main(card_argv(), http=http) == 0
+    method, msg = http.calls[-1]
+    assert method == "chat.postMessage" and msg["channel"] == "CAG"
+    assert msg["metadata"]["event_type"] == "pipe.card.v1"
+    card = msg["metadata"]["event_payload"]
+    assert card["kind"] == "trigger" and card["skills"] == []
+    assert card["owner"] == "UOWN" and card["bot_user_id"] == "UBOT"
+    out = capsys.readouterr()
+    assert TOKEN not in out.out + out.err
+
+
+def test_card_refuses_invalid(monkeypatch, capsys):
+    monkeypatch.setenv("MY_TOK", TOKEN)
+    http = FakeHttp()
+    bad = card_argv()
+    bad[bad.index("--bot-user-id") + 1] = "bad id!"
+    assert pt.main(bad, http=http) == 1
+    assert not [c for c in http.calls if c[0] == "chat.postMessage"]
+    assert TOKEN not in capsys.readouterr().err

@@ -2,6 +2,7 @@
 
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import NamedTuple
@@ -85,6 +86,25 @@ def check_worktree(wt: str, pin: str) -> None:
 def worktree_remove(git, repo: str, path: str) -> None:
     git.run(repo, ["worktree", "remove", "--force", path])
     git.run(repo, ["worktree", "prune"])
+
+
+def sweep_worktrees(git, repo_roots, worktree_root: str, now: float, max_age: float = 86400):
+    """Remove worktree dirs older than `max_age` s. Stays in the root, keeps branches."""
+    root = os.path.realpath(worktree_root)
+    if not os.path.isdir(root):
+        return
+    for name in os.listdir(root):
+        p = os.path.join(root, name)
+        # a symlink or a path that resolves outside the root is never touched
+        if os.path.islink(p) or os.path.commonpath([root, os.path.realpath(p)]) != root:
+            continue
+        if not os.path.isdir(p) or now - os.stat(p).st_mtime < max_age:
+            continue
+        for repo in repo_roots:
+            git.run(repo, ["worktree", "remove", "--force", p])
+        shutil.rmtree(p, ignore_errors=True)  # plain dir, or git could not remove it
+    for repo in repo_roots:
+        git.run(repo, ["worktree", "prune"])
 
 
 def commit_all(git, wt: str, message: str) -> None:
